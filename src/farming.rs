@@ -30,21 +30,21 @@ impl Farm {
             plots: vec![None, None, None, None],
             animals: vec![
                 Animal {
-                    name: "Chicken".to_string(),
+                    name: "鸡".to_string(),
                     breed_time_secs: 120,
                     yield_gold: 15,
                     task_id: None,
                     breeding: false,
                 },
                 Animal {
-                    name: "Cow".to_string(),
+                    name: "牛".to_string(),
                     breed_time_secs: 300,
                     yield_gold: 50,
                     task_id: None,
                     breeding: false,
                 },
                 Animal {
-                    name: "Sheep".to_string(),
+                    name: "羊".to_string(),
                     breed_time_secs: 180,
                     yield_gold: 25,
                     task_id: None,
@@ -56,9 +56,9 @@ impl Farm {
 
     pub fn get_crop_types() -> Vec<(String, u64, u32)> {
         vec![
-            ("Wheat".to_string(), 30, 10),
-            ("Potato".to_string(), 60, 25),
-            ("Carrot".to_string(), 45, 18),
+            ("小麦".to_string(), 30, 10),
+            ("土豆".to_string(), 60, 25),
+            ("胡萝卜".to_string(), 45, 18),
         ]
     }
 
@@ -69,15 +69,15 @@ impl Farm {
         scheduler: &Scheduler,
     ) -> Result<u64, String> {
         if plot_idx >= self.plots.len() {
-            return Err("Invalid plot index.".to_string());
+            return Err("无效地块索引。".to_string());
         }
         if self.plots[plot_idx].is_some() {
-            return Err("Plot is already occupied.".to_string());
+            return Err("该地块已被占用。".to_string());
         }
         let crop_types = Self::get_crop_types();
         let (name, grow_time, yield_gold) = crop_types
             .get(crop_type_idx)
-            .ok_or("Invalid crop type.")?
+            .ok_or("无效作物类型。")?
             .clone();
 
         let task_id = scheduler.add_task(
@@ -117,9 +117,9 @@ impl Farm {
         animal_idx: usize,
         scheduler: &Scheduler,
     ) -> Result<u64, String> {
-        let animal = self.animals.get_mut(animal_idx).ok_or("Invalid animal index.")?;
+        let animal = self.animals.get_mut(animal_idx).ok_or("无效动物索引。")?;
         if animal.breeding {
-            return Err(format!("{} is already breeding.", animal.name));
+            return Err(format!("{} 已经在繁殖中了。", animal.name));
         }
 
         let task_id = scheduler.add_task(

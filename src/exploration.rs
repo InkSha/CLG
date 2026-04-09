@@ -15,36 +15,36 @@ pub struct Area {
 pub fn get_areas() -> Vec<Area> {
     vec![
         Area {
-            name: "Forest".to_string(),
-            description: "A peaceful woodland. Good for beginners.".to_string(),
+            name: "森林".to_string(),
+            description: "宁静的树林，适合新手探索。".to_string(),
             level_req: 1,
             enemy_level: 1,
             explore_cost_hp: 0,
         },
         Area {
-            name: "Dark Caves".to_string(),
-            description: "Damp tunnels filled with danger.".to_string(),
+            name: "黑暗洞穴".to_string(),
+            description: "潮湿而充满危险的地下洞穴。".to_string(),
             level_req: 3,
             enemy_level: 3,
             explore_cost_hp: 2,
         },
         Area {
-            name: "Haunted Ruins".to_string(),
-            description: "Ancient ruins haunted by restless spirits.".to_string(),
+            name: "鬼魂废墟".to_string(),
+            description: "古老的废墟，充斥着不安的亡灵。".to_string(),
             level_req: 5,
             enemy_level: 5,
             explore_cost_hp: 5,
         },
         Area {
-            name: "Volcanic Wastes".to_string(),
-            description: "Scorched land near an active volcano.".to_string(),
+            name: "火山荒地".to_string(),
+            description: "活火山附近被灼烧的焦土。".to_string(),
             level_req: 8,
             enemy_level: 8,
             explore_cost_hp: 10,
         },
         Area {
-            name: "Dragon's Peak".to_string(),
-            description: "The summit where dragons nest. Extremely dangerous.".to_string(),
+            name: "龙之巅峰".to_string(),
+            description: "龙族栖息的山顶，极度危险。".to_string(),
             level_req: 12,
             enemy_level: 12,
             explore_cost_hp: 15,
@@ -61,11 +61,11 @@ pub enum ExploreResult {
 
 pub fn explore(player: &Player, area_idx: usize) -> Result<ExploreResult, String> {
     let areas = get_areas();
-    let area = areas.get(area_idx).ok_or("Invalid area.")?;
+    let area = areas.get(area_idx).ok_or("无效区域。")?;
 
     if player.level < area.level_req {
         return Err(format!(
-            "You need to be level {} to explore {}.",
+            "你需要达到 {} 级才能探索 {}。",
             area.level_req, area.name
         ));
     }
@@ -84,7 +84,7 @@ pub fn explore(player: &Player, area_idx: usize) -> Result<ExploreResult, String
         ExploreResult::Gold(gold)
     } else if roll <= 85 {
         // 15% chance find item
-        let items = ["Old Sword", "Leather Boots", "Health Potion", "Shield Fragment", "Magic Scroll"];
+        let items = ["旧剑", "皮靴", "生命药水", "盾牌碎片", "魔法卷轴"];
         let item = items[rng.gen_range(0..items.len())].to_string();
         ExploreResult::Item(item)
     } else {
