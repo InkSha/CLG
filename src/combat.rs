@@ -29,31 +29,31 @@ pub fn run_combat(player: &mut Player, enemy: &mut Enemy) -> CombatResult {
         // Player turn
         crate::ui::print_separator();
         println!(
-            "⚔  {} (HP: {}/{})  vs  {} (HP: {}/{})",
+            "⚔  {} （生命值：{}/{}）  对战  {} （生命值：{}/{}）",
             player.name, player.hp, player.max_hp,
             enemy.name, enemy.hp, enemy.max_hp
         );
         crate::ui::print_separator();
 
-        let choice = crate::ui::print_menu("Combat", &["Attack", "Flee"]);
+        let choice = crate::ui::print_menu("战斗", &["攻击", "逃跑"]);
 
         if choice == 1 {
             // Flee attempt: 25% chance
             let mut rng = rand::thread_rng();
             if rng.gen_bool(0.25) {
-                crate::ui::print_message("You successfully fled!");
+                crate::ui::print_message("你成功逃脱了！");
                 return CombatResult::Fled;
             } else {
-                crate::ui::print_message("Failed to flee!");
+                crate::ui::print_message("逃跑失败！");
             }
         } else {
             let dmg = calc_damage(player.attack, enemy.defense);
             enemy.hp = (enemy.hp - dmg).max(0);
-            crate::ui::print_message(&format!("You deal {} damage to {}.", dmg, enemy.name));
+            crate::ui::print_message(&format!("你对 {} 造成了 {} 点伤害。", enemy.name, dmg));
         }
 
         if enemy.hp <= 0 {
-            crate::ui::print_message(&format!("You defeated {}!", enemy.name));
+            crate::ui::print_message(&format!("你击败了 {}！", enemy.name));
             return CombatResult::Victory {
                 exp: enemy.exp_reward,
                 gold: enemy.gold_reward,
@@ -63,10 +63,10 @@ pub fn run_combat(player: &mut Player, enemy: &mut Enemy) -> CombatResult {
         // Enemy turn
         let dmg = calc_damage(enemy.attack, player.defense);
         player.take_damage(dmg);
-        crate::ui::print_message(&format!("{} deals {} damage to you.", enemy.name, dmg));
+        crate::ui::print_message(&format!("{} 对你造成了 {} 点伤害。", enemy.name, dmg));
 
         if !player.is_alive() {
-            crate::ui::print_message("You were defeated...");
+            crate::ui::print_message("你被击败了...");
             return CombatResult::Defeat;
         }
     }
@@ -76,7 +76,7 @@ pub fn create_enemies_for_area(area_level: u32) -> Vec<Enemy> {
     let scale = area_level as i32;
     vec![
         Enemy {
-            name: format!("Goblin (Lv{})", area_level),
+            name: format!("哥布林（Lv{}）", area_level),
             hp: 20 + scale * 10,
             max_hp: 20 + scale * 10,
             attack: 5 + scale * 2,
@@ -85,7 +85,7 @@ pub fn create_enemies_for_area(area_level: u32) -> Vec<Enemy> {
             gold_reward: 5 + area_level * 3,
         },
         Enemy {
-            name: format!("Wolf (Lv{})", area_level),
+            name: format!("狼（Lv{}）", area_level),
             hp: 15 + scale * 12,
             max_hp: 15 + scale * 12,
             attack: 7 + scale * 2,
@@ -94,7 +94,7 @@ pub fn create_enemies_for_area(area_level: u32) -> Vec<Enemy> {
             gold_reward: 3 + area_level * 2,
         },
         Enemy {
-            name: format!("Bandit (Lv{})", area_level),
+            name: format!("强盗（Lv{}）", area_level),
             hp: 25 + scale * 8,
             max_hp: 25 + scale * 8,
             attack: 6 + scale * 3,
@@ -103,7 +103,7 @@ pub fn create_enemies_for_area(area_level: u32) -> Vec<Enemy> {
             gold_reward: 10 + area_level * 5,
         },
         Enemy {
-            name: format!("Stone Golem (Lv{})", area_level),
+            name: format!("石像鬼（Lv{}）", area_level),
             hp: 40 + scale * 15,
             max_hp: 40 + scale * 15,
             attack: 4 + scale * 2,
@@ -112,7 +112,7 @@ pub fn create_enemies_for_area(area_level: u32) -> Vec<Enemy> {
             gold_reward: 8 + area_level * 4,
         },
         Enemy {
-            name: format!("Dark Mage (Lv{})", area_level),
+            name: format!("黑暗法师（Lv{}）", area_level),
             hp: 18 + scale * 8,
             max_hp: 18 + scale * 8,
             attack: 10 + scale * 4,

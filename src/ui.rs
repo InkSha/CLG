@@ -14,19 +14,19 @@ pub fn print_header() {
     println!(" ██║     ██║     ██║   ██║");
     println!(" ╚██████╗███████╗╚██████╔╝");
     println!("  ╚═════╝╚══════╝ ╚═════╝ ");
-    println!("  Command-Line Game  v0.1  ");
+    println!("     命令行游戏  v0.1    ");
     print_separator();
 }
 
 pub fn print_player_status(player: &crate::player::Player) {
     print_separator();
-    println!("Player: {}  |  Level: {}", player.name, player.level);
+    println!("角色：{}  |  等级：{}", player.name, player.level);
     println!(
-        "HP: {}/{}  |  ATK: {}  |  DEF: {}",
+        "生命值：{}/{}  |  攻击：{}  |  防御：{}",
         player.hp, player.max_hp, player.attack, player.defense
     );
     println!(
-        "EXP: {}/{}  |  Gold: {}g",
+        "经验：{}/{}  |  金币：{}g",
         player.exp, player.exp_to_next, player.gold
     );
     print_separator();
@@ -38,7 +38,7 @@ pub fn print_menu(title: &str, options: &[&str]) -> usize {
         for (i, opt) in options.iter().enumerate() {
             println!("  {}. {}", i + 1, opt);
         }
-        print!("Choice: ");
+        print!("选择：");
         let _ = stdout().flush();
 
         let line = read_line();
@@ -47,7 +47,7 @@ pub fn print_menu(title: &str, options: &[&str]) -> usize {
                 return n - 1;
             }
         }
-        println!("Invalid choice. Please enter 1-{}.", options.len());
+        println!("无效选择，请输入 1-{}。", options.len());
     }
 }
 
@@ -56,7 +56,7 @@ pub fn print_message(msg: &str) {
 }
 
 pub fn wait_for_enter() {
-    print!("\nPress Enter to continue...");
+    print!("\n按 Enter 继续...");
     let _ = stdout().flush();
     let stdin = io::stdin();
     let _ = stdin.lock().lines().next();

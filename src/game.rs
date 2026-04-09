@@ -24,10 +24,10 @@ impl GameState {
     pub fn new() -> Self {
         crate::ui::clear_screen();
         crate::ui::print_header();
-        println!("Enter your character name:");
+        println!("请输入你的角色名：");
         let name = crate::ui::read_line();
         let name = if name.trim().is_empty() {
-            "Hero".to_string()
+            "勇者".to_string()
         } else {
             name.trim().to_string()
         };
@@ -47,16 +47,16 @@ impl GameState {
             crate::ui::print_player_status(&self.player);
 
             let choice = crate::ui::print_menu(
-                "Main Menu",
+                "主菜单",
                 &[
-                    "Explore",
-                    "Farm",
-                    "Breed Animals",
-                    "Rest (Heal 30 HP for 20g)",
-                    "View Status",
-                    "Save Game",
-                    "Load Game",
-                    "Quit",
+                    "探索",
+                    "农场",
+                    "繁殖动物",
+                    "休息（花费 20 金币回复 30 生命值）",
+                    "查看状态",
+                    "保存游戏",
+                    "读取游戏",
+                    "退出",
                 ],
             );
 
@@ -68,20 +68,20 @@ impl GameState {
                 4 => self.status_menu(),
                 5 => {
                     match self.save_game() {
-                        Ok(()) => crate::ui::print_message("Game saved!"),
-                        Err(e) => crate::ui::print_message(&format!("Save error: {}", e)),
+                        Ok(()) => crate::ui::print_message("游戏已保存！"),
+                        Err(e) => crate::ui::print_message(&format!("保存错误：{}", e)),
                     }
                     crate::ui::wait_for_enter();
                 }
                 6 => {
                     match self.load_game() {
-                        Ok(()) => crate::ui::print_message("Game loaded!"),
-                        Err(e) => crate::ui::print_message(&format!("Load error: {}", e)),
+                        Ok(()) => crate::ui::print_message("游戏已读取！"),
+                        Err(e) => crate::ui::print_message(&format!("读取错误：{}", e)),
                     }
                     crate::ui::wait_for_enter();
                 }
                 7 => {
-                    crate::ui::print_message("Goodbye!");
+                    crate::ui::print_message("再见！");
                     return;
                 }
                 _ => {}
@@ -113,7 +113,7 @@ impl GameState {
         crate::ui::clear_screen();
         crate::ui::print_header();
 
-        println!("Available areas:");
+        println!("可用区域：");
         for (i, area) in self.areas.iter().enumerate() {
             println!(
                 "  {}. {} (Lv.{} req) - {}",
@@ -126,20 +126,20 @@ impl GameState {
 
         let area_names: Vec<String> = self.areas.iter().map(|a| a.name.clone()).collect();
         let mut opts: Vec<&str> = area_names.iter().map(|s| s.as_str()).collect();
-        opts.push("Back");
+        opts.push("返回");
 
-        let choice = crate::ui::print_menu("Choose Area", &opts);
+        let choice = crate::ui::print_menu("选择区域", &opts);
 
         if choice >= self.areas.len() {
             return;
         }
 
         let area_name = self.areas[choice].name.clone();
-        crate::ui::print_message(&format!("Exploring {}...", area_name));
+        crate::ui::print_message(&format!("正在探索 {}...", area_name));
 
         match explore(&self.player, choice) {
             Ok(ExploreResult::Enemy(mut enemy)) => {
-                crate::ui::print_message(&format!("A {} appears!", enemy.name));
+                crate::ui::print_message(&format!("遭遇了 {}！", enemy.name));
                 crate::ui::wait_for_enter();
 
                 let result = run_combat(&mut self.player, &mut enemy);
@@ -148,38 +148,38 @@ impl GameState {
                         self.player.gold += gold;
                         let leveled = self.player.gain_exp(exp);
                         crate::ui::print_message(&format!(
-                            "Victory! Gained {}exp and {}g.",
+                            "胜利！获得 {} 经验和 {} 金币。",
                             exp, gold
                         ));
                         if leveled {
                             crate::ui::print_message(&format!(
-                                "Level up! You are now level {}!",
+                                "升级了！当前等级 {}！",
                                 self.player.level
                             ));
                         }
                     }
                     CombatResult::Defeat => {
-                        crate::ui::print_message("You were defeated. Healing to 1 HP...");
+                        crate::ui::print_message("你被击败了，生命值恢复至 1 点...");
                         self.player.hp = 1;
                     }
                     CombatResult::Fled => {
-                        crate::ui::print_message("You escaped safely.");
+                        crate::ui::print_message("你安全逃脱了。");
                     }
                 }
             }
             Ok(ExploreResult::Gold(gold)) => {
                 self.player.gold += gold;
-                crate::ui::print_message(&format!("Found {}g on the ground!", gold));
+                crate::ui::print_message(&format!("在地上发现了 {} 金币！", gold));
             }
             Ok(ExploreResult::Item(item)) => {
-                crate::ui::print_message(&format!("Found a {}! (Sold for 20g)", item));
+                crate::ui::print_message(&format!("发现了 {}！（卖出 20 金币）", item));
                 self.player.gold += 20;
             }
             Ok(ExploreResult::Nothing) => {
-                crate::ui::print_message("Nothing of interest found.");
+                crate::ui::print_message("什么都没有发现。");
             }
             Err(e) => {
-                crate::ui::print_message(&format!("Cannot explore: {}", e));
+                crate::ui::print_message(&format!("无法探索：{}", e));
             }
         }
 
@@ -191,7 +191,7 @@ impl GameState {
             crate::ui::clear_screen();
             crate::ui::print_header();
 
-            println!("=== Farm Plots ===");
+            println!("=== 农场地块 ===");
             for (i, plot) in self.farm.plots.iter().enumerate() {
                 match plot {
                     Some(crop) => {
@@ -199,15 +199,15 @@ impl GameState {
                             .task_id
                             .map(|id| self.scheduler.is_task_completed(id))
                             .unwrap_or(false);
-                        let status = if task_done { "Ready!" } else { "Growing..." };
-                        println!("  Plot {}: {} - {}", i + 1, crop.name, status);
+                        let status = if task_done { "可以收获！" } else { "生长中..." };
+                        println!("  地块 {}：{} - {}", i + 1, crop.name, status);
                     }
-                    None => println!("  Plot {}: Empty", i + 1),
+                    None => println!("  地块 {}：空地", i + 1),
                 }
             }
             crate::ui::print_separator();
 
-            let choice = crate::ui::print_menu("Farm Menu", &["Plant Crop", "Harvest Crop", "Back"]);
+            let choice = crate::ui::print_menu("农场菜单", &["种植作物", "收获作物", "返回"]);
 
             match choice {
                 0 => self.plant_crop(),
@@ -225,8 +225,8 @@ impl GameState {
             .map(|(n, secs, gold)| format!("{} ({}s -> {}g)", n, secs, gold))
             .collect();
         let mut opts: Vec<&str> = crop_names.iter().map(|s| s.as_str()).collect();
-        opts.push("Back");
-        let crop_choice = crate::ui::print_menu("Select Crop", &opts);
+        opts.push("返回");
+        let crop_choice = crate::ui::print_menu("选择作物", &opts);
         if crop_choice >= crop_types.len() {
             return;
         }
@@ -242,19 +242,19 @@ impl GameState {
             .collect();
 
         if empty_plots.is_empty() {
-            crate::ui::print_message("No empty plots available!");
+            crate::ui::print_message("没有空闲地块！");
             crate::ui::wait_for_enter();
             return;
         }
 
-        let plot_labels: Vec<String> = empty_plots.iter().map(|i| format!("Plot {}", i + 1)).collect();
+        let plot_labels: Vec<String> = empty_plots.iter().map(|i| format!("地块 {}", i + 1)).collect();
         let plot_opts: Vec<&str> = plot_labels.iter().map(|s| s.as_str()).collect();
-        let plot_choice = crate::ui::print_menu("Select Plot", &plot_opts);
+        let plot_choice = crate::ui::print_menu("选择地块", &plot_opts);
         let plot_idx = empty_plots[plot_choice];
 
         match self.farm.plant(plot_idx, crop_choice, &self.scheduler) {
-            Ok(_) => crate::ui::print_message("Crop planted!"),
-            Err(e) => crate::ui::print_message(&format!("Error: {}", e)),
+            Ok(_) => crate::ui::print_message("作物已种植！"),
+            Err(e) => crate::ui::print_message(&format!("错误：{}", e)),
         }
         crate::ui::wait_for_enter();
     }
@@ -275,7 +275,7 @@ impl GameState {
             .collect();
 
         if ready_plots.is_empty() {
-            crate::ui::print_message("No crops are ready to harvest yet.");
+            crate::ui::print_message("还没有作物可以收获。");
             crate::ui::wait_for_enter();
             return;
         }
@@ -288,15 +288,15 @@ impl GameState {
             })
             .collect();
         let plot_opts: Vec<&str> = plot_labels.iter().map(|s| s.as_str()).collect();
-        let choice = crate::ui::print_menu("Harvest which crop?", &plot_opts);
+        let choice = crate::ui::print_menu("收获哪个作物？", &plot_opts);
         let plot_idx = ready_plots[choice];
 
         match self.farm.harvest(plot_idx, &self.scheduler) {
             Some(gold) => {
                 self.player.gold += gold;
-                crate::ui::print_message(&format!("Harvested! Earned {}g.", gold));
+                crate::ui::print_message(&format!("收获成功！获得 {} 金币。", gold));
             }
-            None => crate::ui::print_message("Crop not ready yet."),
+            None => crate::ui::print_message("作物尚未成熟。"),
         }
         crate::ui::wait_for_enter();
     }
@@ -306,22 +306,22 @@ impl GameState {
             crate::ui::clear_screen();
             crate::ui::print_header();
 
-            println!("=== Animals ===");
+            println!("=== 动物 ===");
             for (i, animal) in self.farm.animals.iter().enumerate() {
                 if animal.breeding {
                     let task_done = animal
                         .task_id
                         .map(|id| self.scheduler.is_task_completed(id))
                         .unwrap_or(false);
-                    let status = if task_done { "Ready to collect!" } else { "Breeding..." };
+                    let status = if task_done { "可以收集！" } else { "繁殖中..." };
                     println!("  {}. {} - {}", i + 1, animal.name, status);
                 } else {
-                    println!("  {}. {} - Idle ({}s, {}g)", i + 1, animal.name, animal.breed_time_secs, animal.yield_gold);
+                    println!("  {}. {} - 空闲（{}秒，{}金币）", i + 1, animal.name, animal.breed_time_secs, animal.yield_gold);
                 }
             }
             crate::ui::print_separator();
 
-            let choice = crate::ui::print_menu("Breed Menu", &["Start Breeding", "Collect Animal", "Back"]);
+            let choice = crate::ui::print_menu("繁殖菜单", &["开始繁殖", "收集动物", "返回"]);
 
             match choice {
                 0 => self.start_breeding(),
@@ -343,7 +343,7 @@ impl GameState {
             .collect();
 
         if idle.is_empty() {
-            crate::ui::print_message("All animals are already breeding.");
+            crate::ui::print_message("所有动物都在繁殖中。");
             crate::ui::wait_for_enter();
             return;
         }
@@ -353,12 +353,12 @@ impl GameState {
             .map(|i| self.farm.animals[*i].name.clone())
             .collect();
         let opts: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
-        let choice = crate::ui::print_menu("Select Animal", &opts);
+        let choice = crate::ui::print_menu("选择动物", &opts);
         let animal_idx = idle[choice];
 
         match self.farm.start_breeding(animal_idx, &self.scheduler) {
-            Ok(_) => crate::ui::print_message("Breeding started!"),
-            Err(e) => crate::ui::print_message(&format!("Error: {}", e)),
+            Ok(_) => crate::ui::print_message("繁殖已开始！"),
+            Err(e) => crate::ui::print_message(&format!("错误：{}", e)),
         }
         crate::ui::wait_for_enter();
     }
@@ -379,7 +379,7 @@ impl GameState {
             .collect();
 
         if ready.is_empty() {
-            crate::ui::print_message("No animals ready to collect yet.");
+            crate::ui::print_message("还没有动物可以收集。");
             crate::ui::wait_for_enter();
             return;
         }
@@ -389,15 +389,15 @@ impl GameState {
             .map(|i| self.farm.animals[*i].name.clone())
             .collect();
         let opts: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
-        let choice = crate::ui::print_menu("Collect which animal?", &opts);
+        let choice = crate::ui::print_menu("收集哪只动物？", &opts);
         let animal_idx = ready[choice];
 
         match self.farm.collect_animal(animal_idx, &self.scheduler) {
             Some(gold) => {
                 self.player.gold += gold;
-                crate::ui::print_message(&format!("Collected! Earned {}g.", gold));
+                crate::ui::print_message(&format!("收集成功！获得 {} 金币。", gold));
             }
-            None => crate::ui::print_message("Animal not ready yet."),
+            None => crate::ui::print_message("动物还未准备好。"),
         }
         crate::ui::wait_for_enter();
     }
@@ -407,14 +407,14 @@ impl GameState {
         crate::ui::print_header();
         crate::ui::print_player_status(&self.player);
         if self.player.hp >= self.player.max_hp {
-            crate::ui::print_message("You are already at full HP!");
+            crate::ui::print_message("你的生命值已满！");
         } else if self.player.gold < 20 {
-            crate::ui::print_message("Not enough gold to rest. (Need 20g)");
+            crate::ui::print_message("金币不足，无法休息。（需要 20 金币）");
         } else {
             self.player.gold -= 20;
             self.player.heal(30);
             crate::ui::print_message(&format!(
-                "You rest and recover. HP: {}/{}",
+                "你休息并恢复了体力。生命值：{}/{}",
                 self.player.hp, self.player.max_hp
             ));
         }
@@ -425,12 +425,12 @@ impl GameState {
         crate::ui::clear_screen();
         crate::ui::print_header();
         crate::ui::print_player_status(&self.player);
-        println!("Farm Plots: {}", self.farm.plots.len());
+        println!("农场地块：{}", self.farm.plots.len());
         let occupied = self.farm.plots.iter().filter(|p| p.is_some()).count();
-        println!("  Occupied: {}  |  Empty: {}", occupied, self.farm.plots.len() - occupied);
-        println!("Animals: {}", self.farm.animals.len());
+        println!("  已占用：{}  |  空闲：{}", occupied, self.farm.plots.len() - occupied);
+        println!("动物：{}", self.farm.animals.len());
         for animal in &self.farm.animals {
-            let status = if animal.breeding { "Breeding" } else { "Idle" };
+            let status = if animal.breeding { "繁殖中" } else { "空闲" };
             println!("  {} - {}", animal.name, status);
         }
         crate::ui::wait_for_enter();
