@@ -138,7 +138,7 @@ impl GameState {
         crate::ui::print_message(&format!("Exploring {}...", area_name));
 
         match explore(&self.player, choice) {
-            Ok(ExploreResult::FoundEnemy(mut enemy)) => {
+            Ok(ExploreResult::Enemy(mut enemy)) => {
                 crate::ui::print_message(&format!("A {} appears!", enemy.name));
                 crate::ui::wait_for_enter();
 
@@ -167,15 +167,15 @@ impl GameState {
                     }
                 }
             }
-            Ok(ExploreResult::FoundGold(gold)) => {
+            Ok(ExploreResult::Gold(gold)) => {
                 self.player.gold += gold;
                 crate::ui::print_message(&format!("Found {}g on the ground!", gold));
             }
-            Ok(ExploreResult::FoundItem(item)) => {
+            Ok(ExploreResult::Item(item)) => {
                 crate::ui::print_message(&format!("Found a {}! (Sold for 20g)", item));
                 self.player.gold += 20;
             }
-            Ok(ExploreResult::FoundNothing) => {
+            Ok(ExploreResult::Nothing) => {
                 crate::ui::print_message("Nothing of interest found.");
             }
             Err(e) => {

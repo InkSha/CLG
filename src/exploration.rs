@@ -53,10 +53,10 @@ pub fn get_areas() -> Vec<Area> {
 }
 
 pub enum ExploreResult {
-    FoundEnemy(Enemy),
-    FoundGold(u32),
-    FoundNothing,
-    FoundItem(String),
+    Enemy(Enemy),
+    Gold(u32),
+    Nothing,
+    Item(String),
 }
 
 pub fn explore(player: &Player, area_idx: usize) -> Result<ExploreResult, String> {
@@ -77,19 +77,19 @@ pub fn explore(player: &Player, area_idx: usize) -> Result<ExploreResult, String
         // 50% chance enemy encounter
         let mut enemies = create_enemies_for_area(area.enemy_level);
         let idx = rng.gen_range(0..enemies.len());
-        ExploreResult::FoundEnemy(enemies.remove(idx))
+        ExploreResult::Enemy(enemies.remove(idx))
     } else if roll <= 70 {
         // 20% chance find gold
         let gold = rng.gen_range(5..=30) * area.enemy_level;
-        ExploreResult::FoundGold(gold)
+        ExploreResult::Gold(gold)
     } else if roll <= 85 {
         // 15% chance find item
         let items = ["Old Sword", "Leather Boots", "Health Potion", "Shield Fragment", "Magic Scroll"];
         let item = items[rng.gen_range(0..items.len())].to_string();
-        ExploreResult::FoundItem(item)
+        ExploreResult::Item(item)
     } else {
         // 15% nothing
-        ExploreResult::FoundNothing
+        ExploreResult::Nothing
     };
 
     Ok(result)
