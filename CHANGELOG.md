@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.3](https://github.com/InkSha/CLG/compare/v0.1.2...v0.1.3) (2026-04-09)
+
+
+### Features
+
+* refactor world model to filesystem-driven architecture ([f1a1a5e](https://github.com/InkSha/CLG/commit/f1a1a5e91596a125750d701adcef7b6fafb77192))
+* refactor world model to filesystem-driven architecture ([13a1900](https://github.com/InkSha/CLG/commit/13a19009459f0ee3351283e4ae9708396ad3bf7a))
+
 ## [0.1.2](https://github.com/InkSha/CLG/compare/v0.1.1...v0.1.2) (2026-04-09)
 
 
