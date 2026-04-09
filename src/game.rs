@@ -3,20 +3,15 @@ use crate::{
     exploration::{explore, get_areas, Area, ExploreResult},
     farming::Farm,
     player::Player,
-    scheduler::Scheduler,
+    world::{WorldEvent, WorldManager, FARM_AREA, PLAYER_FILE, DEFAULT_START_AREA},
 };
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize)]
-pub struct SaveData {
-    player: Player,
-    farm: Farm,
-}
 
 pub struct GameState {
     player: Player,
     farm: Farm,
-    scheduler: Scheduler,
+    world: WorldManager,
+    /// The area directory the player is currently in.
+    current_area: String,
     areas: Vec<Area>,
 }
 
@@ -24,6 +19,55 @@ impl GameState {
     pub fn new() -> Self {
         crate::ui::clear_screen();
         crate::ui::print_header();
+
+        // Initialise the filesystem-driven world.
+        let world = WorldManager::new().expect("无法初始化世界文件系统");
+        let areas = get_areas();
+        let area_names: Vec<&str> = areas.iter().map(|a| a.name.as_str()).collect();
+
+        // Create area directories + area.json metadata files.
+        world.init_areas(&areas).expect("无法创建区域目录");
+
+        // Find the area that already holds player.json, or default to 森林.
+        let current_area = world
+            .find_player_area(&area_names)
+            .unwrap_or_else(|| DEFAULT_START_AREA.to_string());
+
+        // Load existing player or prompt for a new character.
+        let player = if world.entity_exists(&current_area, PLAYER_FILE) {
+            match world.read_player(&current_area) {
+                Ok(p) => {
+                    println!("欢迎回来，{}！当前位置：{}", p.name, current_area);
+                    p
+                }
+                Err(_) => Self::create_new_player(&world, &current_area),
+            }
+        } else {
+            Self::create_new_player(&world, &current_area)
+        };
+
+        // Init farm directory; load state from files.
+        let farm_template = Farm::new();
+        world.init_farm(&farm_template).expect("无法初始化农场目录");
+        let farm = world.load_farm(&farm_template).unwrap_or(farm_template);
+
+        println!(
+            "\n📁 世界目录已就绪：world/\n   玩家文件：world/{}/player.json",
+            current_area
+        );
+        crate::ui::wait_for_enter();
+
+        GameState {
+            player,
+            farm,
+            world,
+            current_area,
+            areas,
+        }
+    }
+
+    /// Prompt for a character name, create a new Player, and write it to disk.
+    fn create_new_player(world: &WorldManager, area: &str) -> Player {
         println!("请输入你的角色名：");
         let name = crate::ui::read_line();
         let name = if name.trim().is_empty() {
@@ -31,12 +75,43 @@ impl GameState {
         } else {
             name.trim().to_string()
         };
+        let player = Player::new(name);
+        world
+            .write_player(&player, area)
+            .expect("无法写入玩家文件");
+        player
+    }
 
-        GameState {
-            player: Player::new(name),
-            farm: Farm::new(),
-            scheduler: Scheduler::new(),
-            areas: get_areas(),
+    /// Flush player + farm state to the filesystem.
+    fn sync_state(&self) {
+        if let Err(e) = self.world.write_player(&self.player, &self.current_area) {
+            eprintln!("警告：无法同步玩家状态：{}", e);
+        }
+        if let Err(e) = self.world.sync_farm(&self.farm) {
+            eprintln!("警告：无法同步农场状态：{}", e);
+        }
+    }
+
+    /// Print any pending filesystem events from the background watcher.
+    fn display_world_events(&self) {
+        let events = self.world.poll_events();
+        if !events.is_empty() {
+            crate::ui::print_separator();
+            println!("📡 [文件系统监听事件]");
+            for event in events {
+                match event {
+                    WorldEvent::PlayerMoved { to_area } => {
+                        println!("  📂 player.json → world/{}/", to_area);
+                    }
+                    WorldEvent::EntityCreated { area, filename } => {
+                        println!("  📄 创建：world/{}/{}", area, filename);
+                    }
+                    WorldEvent::EntityRemoved { area, filename } => {
+                        println!("  🗑  删除：world/{}/{}", area, filename);
+                    }
+                }
+            }
+            crate::ui::print_separator();
         }
     }
 
@@ -45,6 +120,14 @@ impl GameState {
             crate::ui::clear_screen();
             crate::ui::print_header();
             crate::ui::print_player_status(&self.player);
+            println!("当前位置：{}", self.current_area);
+            println!(
+                "📁 world/{}/player.json",
+                self.current_area
+            );
+            crate::ui::print_separator();
+
+            self.display_world_events();
 
             let choice = crate::ui::print_menu(
                 "主菜单",
@@ -89,25 +172,24 @@ impl GameState {
         }
     }
 
+    // ── Save / Load ───────────────────────────────────────────────────────────
+
     fn save_game(&self) -> Result<(), String> {
-        let data = SaveData {
-            player: self.player.clone(),
-            farm: Farm {
-                plots: self.farm.plots.clone(),
-                animals: self.farm.animals.clone(),
-            },
-        };
-        let json = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
-        std::fs::write("save.json", json).map_err(|e| e.to_string())
+        // Persist player + farm to their respective world files.
+        self.sync_state();
+        Ok(())
     }
 
     fn load_game(&mut self) -> Result<(), String> {
-        let json = std::fs::read_to_string("save.json").map_err(|e| e.to_string())?;
-        let data: SaveData = serde_json::from_str(&json).map_err(|e| e.to_string())?;
-        self.player = data.player;
-        self.farm = data.farm;
+        // Reload player from the world filesystem.
+        self.player = self.world.read_player(&self.current_area)?;
+        // Reload farm from its directory files.
+        let template = Farm::new();
+        self.farm = self.world.load_farm(&template)?;
         Ok(())
     }
+
+    // ── Exploration ───────────────────────────────────────────────────────────
 
     fn explore_menu(&mut self) {
         crate::ui::clear_screen();
@@ -134,12 +216,50 @@ impl GameState {
             return;
         }
 
-        let area_name = self.areas[choice].name.clone();
-        crate::ui::print_message(&format!("正在探索 {}...", area_name));
+        let target_area = self.areas[choice].name.clone();
+
+        // ── Player movement: move player.json to the target area directory ──
+        if target_area != self.current_area {
+            crate::ui::print_message(&format!(
+                "📂 正在将 player.json 从 world/{} 移动到 world/{}...",
+                self.current_area, target_area
+            ));
+            match self.world.move_player(&self.current_area, &target_area) {
+                Ok(()) => {
+                    self.current_area = target_area.clone();
+                }
+                Err(e) => {
+                    crate::ui::print_message(&format!("移动失败：{}", e));
+                    crate::ui::wait_for_enter();
+                    return;
+                }
+            }
+        }
+
+        crate::ui::print_message(&format!("正在探索 {}...", target_area));
 
         match explore(&self.player, choice) {
             Ok(ExploreResult::Enemy(mut enemy)) => {
-                crate::ui::print_message(&format!("遭遇了 {}！", enemy.name));
+                // Spawn enemy as a file in the current area directory.
+                let enemy_file = format!("enemy_{}.json", sanitize_filename(&enemy.name));
+                let enemy_data = serde_json::json!({
+                    "type": "enemy",
+                    "name": enemy.name,
+                    "hp": enemy.hp,
+                    "max_hp": enemy.max_hp,
+                    "attack": enemy.attack,
+                    "defense": enemy.defense,
+                    "exp_reward": enemy.exp_reward,
+                    "gold_reward": enemy.gold_reward,
+                });
+                let _ = self
+                    .world
+                    .write_entity(&self.current_area, &enemy_file, &enemy_data);
+
+                crate::ui::print_message(&format!(
+                    "遭遇了 {}！（实体文件：world/{}/{}）",
+                    enemy.name, self.current_area, enemy_file
+                ));
                 crate::ui::wait_for_enter();
 
                 let result = run_combat(&mut self.player, &mut enemy);
@@ -157,13 +277,17 @@ impl GameState {
                                 self.player.level
                             ));
                         }
+                        // Enemy defeated → remove its file.
+                        let _ = self.world.remove_entity(&self.current_area, &enemy_file);
                     }
                     CombatResult::Defeat => {
                         crate::ui::print_message("你被击败了，生命值恢复至 1 点...");
                         self.player.hp = 1;
+                        let _ = self.world.remove_entity(&self.current_area, &enemy_file);
                     }
                     CombatResult::Fled => {
                         crate::ui::print_message("你安全逃脱了。");
+                        let _ = self.world.remove_entity(&self.current_area, &enemy_file);
                     }
                 }
             }
@@ -172,8 +296,15 @@ impl GameState {
                 crate::ui::print_message(&format!("在地上发现了 {} 金币！", gold));
             }
             Ok(ExploreResult::Item(item)) => {
+                // Create an item file, then immediately "collect" it.
+                let item_file = format!("item_{}.json", sanitize_filename(&item));
+                let item_data = serde_json::json!({ "type": "item", "name": item });
+                let _ = self
+                    .world
+                    .write_entity(&self.current_area, &item_file, &item_data);
                 crate::ui::print_message(&format!("发现了 {}！（卖出 20 金币）", item));
                 self.player.gold += 20;
+                let _ = self.world.remove_entity(&self.current_area, &item_file);
             }
             Ok(ExploreResult::Nothing) => {
                 crate::ui::print_message("什么都没有发现。");
@@ -183,8 +314,11 @@ impl GameState {
             }
         }
 
+        self.sync_state();
         crate::ui::wait_for_enter();
     }
+
+    // ── Farming ───────────────────────────────────────────────────────────────
 
     fn farm_menu(&mut self) {
         loop {
@@ -195,14 +329,17 @@ impl GameState {
             for (i, plot) in self.farm.plots.iter().enumerate() {
                 match plot {
                     Some(crop) => {
-                        let task_done = crop
-                            .task_id
-                            .map(|id| self.scheduler.is_task_completed(id))
-                            .unwrap_or(false);
-                        let status = if task_done { "可以收获！" } else { "生长中..." };
-                        println!("  地块 {}：{} - {}", i + 1, crop.name, status);
+                        let status = if crop.is_ready() { "可以收获！" } else { "生长中..." };
+                        println!(
+                            "  地块 {}：{} - {}  [world/{}/plot_{}.json]",
+                            i + 1,
+                            crop.name,
+                            status,
+                            FARM_AREA,
+                            i
+                        );
                     }
-                    None => println!("  地块 {}：空地", i + 1),
+                    None => println!("  地块 {}：空地  [world/{}/plot_{}.json]", i + 1, FARM_AREA, i),
                 }
             }
             crate::ui::print_separator();
@@ -231,7 +368,6 @@ impl GameState {
             return;
         }
 
-        // Select empty plot
         let empty_plots: Vec<usize> = self
             .farm
             .plots
@@ -247,13 +383,17 @@ impl GameState {
             return;
         }
 
-        let plot_labels: Vec<String> = empty_plots.iter().map(|i| format!("地块 {}", i + 1)).collect();
+        let plot_labels: Vec<String> =
+            empty_plots.iter().map(|i| format!("地块 {}", i + 1)).collect();
         let plot_opts: Vec<&str> = plot_labels.iter().map(|s| s.as_str()).collect();
         let plot_choice = crate::ui::print_menu("选择地块", &plot_opts);
         let plot_idx = empty_plots[plot_choice];
 
-        match self.farm.plant(plot_idx, crop_choice, &self.scheduler) {
-            Ok(_) => crate::ui::print_message("作物已种植！"),
+        match self.farm.plant(plot_idx, crop_choice) {
+            Ok(()) => {
+                crate::ui::print_message("作物已种植！");
+                self.world.sync_farm(&self.farm).ok();
+            }
             Err(e) => crate::ui::print_message(&format!("错误：{}", e)),
         }
         crate::ui::wait_for_enter();
@@ -265,12 +405,7 @@ impl GameState {
             .plots
             .iter()
             .enumerate()
-            .filter(|(_, p)| {
-                p.as_ref()
-                    .and_then(|c| c.task_id)
-                    .map(|id| self.scheduler.is_task_completed(id))
-                    .unwrap_or(false)
-            })
+            .filter(|(_, p)| p.as_ref().map(|c| c.is_ready()).unwrap_or(false))
             .map(|(i, _)| i)
             .collect();
 
@@ -291,15 +426,18 @@ impl GameState {
         let choice = crate::ui::print_menu("收获哪个作物？", &plot_opts);
         let plot_idx = ready_plots[choice];
 
-        match self.farm.harvest(plot_idx, &self.scheduler) {
+        match self.farm.harvest(plot_idx) {
             Some(gold) => {
                 self.player.gold += gold;
                 crate::ui::print_message(&format!("收获成功！获得 {} 金币。", gold));
+                self.sync_state();
             }
             None => crate::ui::print_message("作物尚未成熟。"),
         }
         crate::ui::wait_for_enter();
     }
+
+    // ── Animal Breeding ───────────────────────────────────────────────────────
 
     fn breed_menu(&mut self) {
         loop {
@@ -309,14 +447,13 @@ impl GameState {
             println!("=== 动物 ===");
             for (i, animal) in self.farm.animals.iter().enumerate() {
                 if animal.breeding {
-                    let task_done = animal
-                        .task_id
-                        .map(|id| self.scheduler.is_task_completed(id))
-                        .unwrap_or(false);
-                    let status = if task_done { "可以收集！" } else { "繁殖中..." };
-                    println!("  {}. {} - {}", i + 1, animal.name, status);
+                    let status = if animal.is_ready() { "可以收集！" } else { "繁殖中..." };
+                    println!("  {}. {} - {}  [world/{}/{}.json]", i + 1, animal.name, status, FARM_AREA, animal.name);
                 } else {
-                    println!("  {}. {} - 空闲（{}秒，{}金币）", i + 1, animal.name, animal.breed_time_secs, animal.yield_gold);
+                    println!(
+                        "  {}. {} - 空闲（{}秒，{}金币）  [world/{}/{}.json]",
+                        i + 1, animal.name, animal.breed_time_secs, animal.yield_gold, FARM_AREA, animal.name
+                    );
                 }
             }
             crate::ui::print_separator();
@@ -356,8 +493,11 @@ impl GameState {
         let choice = crate::ui::print_menu("选择动物", &opts);
         let animal_idx = idle[choice];
 
-        match self.farm.start_breeding(animal_idx, &self.scheduler) {
-            Ok(_) => crate::ui::print_message("繁殖已开始！"),
+        match self.farm.start_breeding(animal_idx) {
+            Ok(()) => {
+                crate::ui::print_message("繁殖已开始！");
+                self.world.sync_farm(&self.farm).ok();
+            }
             Err(e) => crate::ui::print_message(&format!("错误：{}", e)),
         }
         crate::ui::wait_for_enter();
@@ -369,12 +509,7 @@ impl GameState {
             .animals
             .iter()
             .enumerate()
-            .filter(|(_, a)| {
-                a.breeding
-                    && a.task_id
-                        .map(|id| self.scheduler.is_task_completed(id))
-                        .unwrap_or(false)
-            })
+            .filter(|(_, a)| a.is_ready())
             .map(|(i, _)| i)
             .collect();
 
@@ -392,15 +527,18 @@ impl GameState {
         let choice = crate::ui::print_menu("收集哪只动物？", &opts);
         let animal_idx = ready[choice];
 
-        match self.farm.collect_animal(animal_idx, &self.scheduler) {
+        match self.farm.collect_animal(animal_idx) {
             Some(gold) => {
                 self.player.gold += gold;
                 crate::ui::print_message(&format!("收集成功！获得 {} 金币。", gold));
+                self.sync_state();
             }
             None => crate::ui::print_message("动物还未准备好。"),
         }
         crate::ui::wait_for_enter();
     }
+
+    // ── Rest / Status ─────────────────────────────────────────────────────────
 
     fn rest_menu(&mut self) {
         crate::ui::clear_screen();
@@ -417,6 +555,7 @@ impl GameState {
                 "你休息并恢复了体力。生命值：{}/{}",
                 self.player.hp, self.player.max_hp
             ));
+            self.sync_state();
         }
         crate::ui::wait_for_enter();
     }
@@ -425,14 +564,26 @@ impl GameState {
         crate::ui::clear_screen();
         crate::ui::print_header();
         crate::ui::print_player_status(&self.player);
+        println!("当前位置：{}  (world/{}/)", self.current_area, self.current_area);
         println!("农场地块：{}", self.farm.plots.len());
         let occupied = self.farm.plots.iter().filter(|p| p.is_some()).count();
-        println!("  已占用：{}  |  空闲：{}", occupied, self.farm.plots.len() - occupied);
+        println!(
+            "  已占用：{}  |  空闲：{}",
+            occupied,
+            self.farm.plots.len() - occupied
+        );
         println!("动物：{}", self.farm.animals.len());
         for animal in &self.farm.animals {
             let status = if animal.breeding { "繁殖中" } else { "空闲" };
-            println!("  {} - {}", animal.name, status);
+            println!("  {} - {}  [world/{}/{}.json]", animal.name, status, FARM_AREA, animal.name);
         }
         crate::ui::wait_for_enter();
     }
+}
+
+/// Sanitize a string for use as a filename component.
+fn sanitize_filename(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect()
 }
