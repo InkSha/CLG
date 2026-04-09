@@ -3,6 +3,7 @@ use std::time::Instant;
 
 pub struct ScheduledTask {
     pub id: u64,
+    #[allow(dead_code)]
     pub description: String,
     pub due_at: Instant,
     pub completed: bool,
@@ -62,6 +63,7 @@ impl Scheduler {
         tasks.retain(|t| t.id != id);
     }
 
+    #[allow(dead_code)]
     pub fn get_completed_tasks(&self) -> Vec<u64> {
         let tasks = self.tasks.lock().unwrap();
         tasks.iter().filter(|t| t.completed).map(|t| t.id).collect()

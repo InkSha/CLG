@@ -52,6 +52,7 @@ impl GameState {
                     "Explore",
                     "Farm",
                     "Breed Animals",
+                    "Rest (Heal 30 HP for 20g)",
                     "View Status",
                     "Save Game",
                     "Load Game",
@@ -63,22 +64,23 @@ impl GameState {
                 0 => self.explore_menu(),
                 1 => self.farm_menu(),
                 2 => self.breed_menu(),
-                3 => self.status_menu(),
-                4 => {
+                3 => self.rest_menu(),
+                4 => self.status_menu(),
+                5 => {
                     match self.save_game() {
                         Ok(()) => crate::ui::print_message("Game saved!"),
                         Err(e) => crate::ui::print_message(&format!("Save error: {}", e)),
                     }
                     crate::ui::wait_for_enter();
                 }
-                5 => {
+                6 => {
                     match self.load_game() {
                         Ok(()) => crate::ui::print_message("Game loaded!"),
                         Err(e) => crate::ui::print_message(&format!("Load error: {}", e)),
                     }
                     crate::ui::wait_for_enter();
                 }
-                6 => {
+                7 => {
                     crate::ui::print_message("Goodbye!");
                     return;
                 }
@@ -396,6 +398,25 @@ impl GameState {
                 crate::ui::print_message(&format!("Collected! Earned {}g.", gold));
             }
             None => crate::ui::print_message("Animal not ready yet."),
+        }
+        crate::ui::wait_for_enter();
+    }
+
+    fn rest_menu(&mut self) {
+        crate::ui::clear_screen();
+        crate::ui::print_header();
+        crate::ui::print_player_status(&self.player);
+        if self.player.hp >= self.player.max_hp {
+            crate::ui::print_message("You are already at full HP!");
+        } else if self.player.gold < 20 {
+            crate::ui::print_message("Not enough gold to rest. (Need 20g)");
+        } else {
+            self.player.gold -= 20;
+            self.player.heal(30);
+            crate::ui::print_message(&format!(
+                "You rest and recover. HP: {}/{}",
+                self.player.hp, self.player.max_hp
+            ));
         }
         crate::ui::wait_for_enter();
     }
