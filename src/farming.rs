@@ -1,12 +1,24 @@
 use serde::{Deserialize, Serialize};
-use crate::scheduler::Scheduler;
+
+use crate::world::current_unix_secs;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Crop {
     pub name: String,
     pub grow_time_secs: u64,
     pub yield_gold: u32,
-    pub task_id: Option<u64>,
+    /// Unix timestamp (seconds) when this crop was planted.
+    /// Used to check readiness without an external scheduler.
+    pub planted_at_secs: Option<u64>,
+}
+
+impl Crop {
+    /// Returns true once the grow time has elapsed since planting.
+    pub fn is_ready(&self) -> bool {
+        self.planted_at_secs
+            .map(|t| current_unix_secs() >= t + self.grow_time_secs)
+            .unwrap_or(false)
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -14,8 +26,20 @@ pub struct Animal {
     pub name: String,
     pub breed_time_secs: u64,
     pub yield_gold: u32,
-    pub task_id: Option<u64>,
     pub breeding: bool,
+    /// Unix timestamp (seconds) when breeding was started.
+    pub breed_started_at_secs: Option<u64>,
+}
+
+impl Animal {
+    /// Returns true once the breed time has elapsed since breeding began.
+    pub fn is_ready(&self) -> bool {
+        self.breeding
+            && self
+                .breed_started_at_secs
+                .map(|t| current_unix_secs() >= t + self.breed_time_secs)
+                .unwrap_or(false)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -33,22 +57,22 @@ impl Farm {
                     name: "鸡".to_string(),
                     breed_time_secs: 120,
                     yield_gold: 15,
-                    task_id: None,
                     breeding: false,
+                    breed_started_at_secs: None,
                 },
                 Animal {
                     name: "牛".to_string(),
                     breed_time_secs: 300,
                     yield_gold: 50,
-                    task_id: None,
                     breeding: false,
+                    breed_started_at_secs: None,
                 },
                 Animal {
                     name: "羊".to_string(),
                     breed_time_secs: 180,
                     yield_gold: 25,
-                    task_id: None,
                     breeding: false,
+                    breed_started_at_secs: None,
                 },
             ],
         }
@@ -62,12 +86,9 @@ impl Farm {
         ]
     }
 
-    pub fn plant(
-        &mut self,
-        plot_idx: usize,
-        crop_type_idx: usize,
-        scheduler: &Scheduler,
-    ) -> Result<u64, String> {
+    /// Plant a crop in the given plot, recording the current time as the
+    /// planting timestamp (replaces the old scheduler task).
+    pub fn plant(&mut self, plot_idx: usize, crop_type_idx: usize) -> Result<(), String> {
         if plot_idx >= self.plots.len() {
             return Err("无效地块索引。".to_string());
         }
@@ -80,31 +101,24 @@ impl Farm {
             .ok_or("无效作物类型。")?
             .clone();
 
-        let task_id = scheduler.add_task(
-            format!("Grow {}", name),
-            grow_time,
-        );
-
         self.plots[plot_idx] = Some(Crop {
             name,
             grow_time_secs: grow_time,
             yield_gold,
-            task_id: Some(task_id),
+            planted_at_secs: Some(current_unix_secs()),
         });
 
-        Ok(task_id)
+        Ok(())
     }
 
-    pub fn harvest(&mut self, plot_idx: usize, scheduler: &Scheduler) -> Option<u32> {
+    /// Harvest a ready crop, returning its gold value.
+    pub fn harvest(&mut self, plot_idx: usize) -> Option<u32> {
         if plot_idx >= self.plots.len() {
             return None;
         }
-        let crop = self.plots[plot_idx].as_ref()?;
-        let task_id = crop.task_id?;
-
-        if scheduler.is_task_completed(task_id) {
-            let gold = crop.yield_gold;
-            scheduler.remove_task(task_id);
+        let ready = self.plots[plot_idx].as_ref()?.is_ready();
+        if ready {
+            let gold = self.plots[plot_idx].as_ref().unwrap().yield_gold;
             self.plots[plot_idx] = None;
             Some(gold)
         } else {
@@ -112,40 +126,26 @@ impl Farm {
         }
     }
 
-    pub fn start_breeding(
-        &mut self,
-        animal_idx: usize,
-        scheduler: &Scheduler,
-    ) -> Result<u64, String> {
+    /// Start breeding an idle animal, recording the current time.
+    pub fn start_breeding(&mut self, animal_idx: usize) -> Result<(), String> {
         let animal = self.animals.get_mut(animal_idx).ok_or("无效动物索引。")?;
         if animal.breeding {
             return Err(format!("{} 已经在繁殖中了。", animal.name));
         }
-
-        let task_id = scheduler.add_task(
-            format!("Breed {}", animal.name),
-            animal.breed_time_secs,
-        );
-        animal.task_id = Some(task_id);
         animal.breeding = true;
-        Ok(task_id)
+        animal.breed_started_at_secs = Some(current_unix_secs());
+        Ok(())
     }
 
-    pub fn collect_animal(&mut self, animal_idx: usize, scheduler: &Scheduler) -> Option<u32> {
+    /// Collect a ready animal's yield, returning its gold value.
+    pub fn collect_animal(&mut self, animal_idx: usize) -> Option<u32> {
         let animal = self.animals.get_mut(animal_idx)?;
-        if !animal.breeding {
+        if !animal.is_ready() {
             return None;
         }
-        let task_id = animal.task_id?;
-
-        if scheduler.is_task_completed(task_id) {
-            let gold = animal.yield_gold;
-            scheduler.remove_task(task_id);
-            animal.task_id = None;
-            animal.breeding = false;
-            Some(gold)
-        } else {
-            None
-        }
+        let gold = animal.yield_gold;
+        animal.breeding = false;
+        animal.breed_started_at_secs = None;
+        Some(gold)
     }
 }

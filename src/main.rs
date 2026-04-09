@@ -3,7 +3,7 @@ mod player;
 mod combat;
 mod exploration;
 mod farming;
-mod scheduler;
+mod world;
 mod ui;
 
 fn main() {
