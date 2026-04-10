@@ -1,3 +1,4 @@
+mod actions;
 mod game;
 mod player;
 mod combat;

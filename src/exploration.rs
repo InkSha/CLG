@@ -12,7 +12,8 @@ pub struct Area {
     pub explore_cost_hp: i32,
 }
 
-pub fn get_areas() -> Vec<Area> {
+/// Default hard-coded areas, written to `world/config/areas.yaml` on first run.
+pub fn default_areas() -> Vec<Area> {
     vec![
         Area {
             name: "森林".to_string(),
@@ -59,10 +60,10 @@ pub enum ExploreResult {
     Item(String),
 }
 
-pub fn explore(player: &Player, area_idx: usize) -> Result<ExploreResult, String> {
-    let areas = get_areas();
-    let area = areas.get(area_idx).ok_or("无效区域。")?;
-
+/// Perform an exploration encounter in `area` for `player`.
+///
+/// Returns an error if the player's level is below the area's requirement.
+pub fn explore(player: &Player, area: &Area) -> Result<ExploreResult, String> {
     if player.level < area.level_req {
         return Err(format!(
             "你需要达到 {} 级才能探索 {}。",

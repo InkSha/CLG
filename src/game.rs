@@ -1,7 +1,8 @@
 use crate::{
+    actions::{ActionMap, BuiltinCmd},
     combat::{run_combat, CombatResult},
-    exploration::{explore, get_areas, Area, ExploreResult},
-    farming::Farm,
+    exploration::{explore, Area, ExploreResult},
+    farming::{CropType, Farm},
     player::Player,
     world::{WorldEvent, WorldManager, FARM_AREA, PLAYER_FILE, DEFAULT_START_AREA},
 };
@@ -13,6 +14,8 @@ pub struct GameState {
     /// The area directory the player is currently in.
     current_area: String,
     areas: Vec<Area>,
+    /// Crop types loaded from config.
+    crop_types: Vec<CropType>,
 }
 
 impl GameState {
@@ -22,10 +25,15 @@ impl GameState {
 
         // Initialise the filesystem-driven world.
         let world = WorldManager::new().expect("无法初始化世界文件系统");
-        let areas = get_areas();
+
+        // Write default config files (areas, crops, animals, action.yaml) if absent.
+        world.init_config().expect("无法初始化配置文件");
+
+        // Load areas from config (falls back to built-in defaults).
+        let areas = world.load_areas_config();
         let area_names: Vec<&str> = areas.iter().map(|a| a.name.as_str()).collect();
 
-        // Create area directories + area.json metadata files.
+        // Create area directories + area.yaml metadata files.
         world.init_areas(&areas).expect("无法创建区域目录");
 
         // Write built-in template files (once, if absent) and apply any templates.
@@ -38,7 +46,7 @@ impl GameState {
             }
         }
 
-        // Find the area that already holds player.json, or default to 森林.
+        // Find the area that already holds player.yaml, or default to 森林.
         let current_area = world
             .find_player_area(&area_names)
             .unwrap_or_else(|| DEFAULT_START_AREA.to_string());
@@ -56,8 +64,11 @@ impl GameState {
             Self::create_new_player(&world, &current_area)
         };
 
+        // Load crop types from config.
+        let crop_types = world.load_crop_types();
+
         // Init farm directory; load state from files.
-        let farm_template = Farm::new();
+        let farm_template = world.make_default_farm();
         world.init_farm(&farm_template).expect("无法初始化农场目录");
         let farm = world.load_farm(&farm_template).unwrap_or(farm_template);
 
@@ -73,6 +84,7 @@ impl GameState {
             world,
             current_area,
             areas,
+            crop_types,
         }
     }
 
@@ -111,7 +123,7 @@ impl GameState {
             for event in events {
                 match event {
                     WorldEvent::PlayerMoved { to_area } => {
-                        println!("  📂 player.json → world/{}/", to_area);
+                        println!("  📂 player.yaml → world/{}/", to_area);
                     }
                     WorldEvent::EntityCreated { area, filename } => {
                         println!("  📄 创建：world/{}/{}", area, filename);
@@ -123,7 +135,7 @@ impl GameState {
                         println!("  📋 模板变更：world/{}", path);
                         match self.world.reapply_template(&path) {
                             Ok(out) => println!("     ✅ 已重新生成：{}", out),
-                            Err(e)  => println!("     ⚠️  重新生成失败：{}", e),
+                            Err(e) => println!("     ⚠️  重新生成失败：{}", e),
                         }
                     }
                 }
@@ -132,118 +144,140 @@ impl GameState {
         }
     }
 
+    // ── Main game loop ────────────────────────────────────────────────────────
+
     pub fn run(&mut self) {
         loop {
             crate::ui::clear_screen();
             crate::ui::print_header();
             crate::ui::print_player_status(&self.player);
-            println!("当前位置：{}", self.current_area);
-            println!(
-                "📁 world/{}/player.yaml",
-                self.current_area
-            );
+            println!("📍 当前位置：{}  (world/{}/)", self.current_area, self.current_area);
             crate::ui::print_separator();
+
+            // Show files in current area.
+            let files = self.world.list_area_files(&self.current_area);
+            if !files.is_empty() {
+                println!("📂 world/{}/", self.current_area);
+                for f in &files {
+                    println!("   {}", f);
+                }
+                crate::ui::print_separator();
+            }
 
             self.display_world_events();
 
-            let choice = crate::ui::print_menu(
-                "主菜单",
-                &[
-                    "探索",
-                    "农场",
-                    "繁殖动物",
-                    "休息（花费 20 金币回复 30 生命值）",
-                    "查看状态",
-                    "保存游戏",
-                    "读取游戏",
-                    "退出",
-                ],
-            );
+            // Load action map for the current area.
+            let action_map = self.world.load_action_map(&self.current_area);
+            self.print_actions(&action_map);
 
-            match choice {
-                0 => self.explore_menu(),
-                1 => self.farm_menu(),
-                2 => self.breed_menu(),
-                3 => self.rest_menu(),
-                4 => self.status_menu(),
-                5 => {
-                    match self.save_game() {
-                        Ok(()) => crate::ui::print_message("游戏已保存！"),
-                        Err(e) => crate::ui::print_message(&format!("保存错误：{}", e)),
+            // Read player command.
+            print!("\n> ");
+            let _ = std::io::Write::flush(&mut std::io::stdout());
+            let input = crate::ui::read_line();
+            let input = input.trim();
+
+            if input.is_empty() {
+                continue;
+            }
+
+            // Match input to an action.
+            match action_map.match_input(input) {
+                Some(cmd) => {
+                    if self.execute_cmd(cmd) {
+                        return; // Quit
                     }
+                }
+                None => {
+                    println!("❓ 未知指令：\"{}\"。输入 status 查看帮助。", input);
                     crate::ui::wait_for_enter();
                 }
-                6 => {
-                    match self.load_game() {
-                        Ok(()) => crate::ui::print_message("游戏已读取！"),
-                        Err(e) => crate::ui::print_message(&format!("读取错误：{}", e)),
-                    }
-                    crate::ui::wait_for_enter();
-                }
-                7 => {
-                    crate::ui::print_message("再见！");
-                    return;
-                }
-                _ => {}
             }
         }
     }
 
-    // ── Save / Load ───────────────────────────────────────────────────────────
-
-    fn save_game(&self) -> Result<(), String> {
-        // Persist player + farm to their respective world files.
-        self.sync_state();
-        Ok(())
-    }
-
-    fn load_game(&mut self) -> Result<(), String> {
-        // Reload player from the world filesystem.
-        self.player = self.world.read_player(&self.current_area)?;
-        // Reload farm from its directory files.
-        let template = Farm::new();
-        self.farm = self.world.load_farm(&template)?;
-        Ok(())
-    }
-
-    // ── Exploration ───────────────────────────────────────────────────────────
-
-    fn explore_menu(&mut self) {
-        crate::ui::clear_screen();
-        crate::ui::print_header();
-
-        println!("可用区域：");
-        for (i, area) in self.areas.iter().enumerate() {
-            println!(
-                "  {}. {} (Lv.{} req) - {}",
-                i + 1,
-                area.name,
-                area.level_req,
-                area.description
-            );
+    /// Print available actions from the action map.
+    fn print_actions(&self, map: &ActionMap) {
+        println!("📋 可用指令：");
+        for (name, builtin) in map.display_list() {
+            println!("  {:20}  {}", name, builtin);
         }
+    }
 
-        let area_names: Vec<String> = self.areas.iter().map(|a| a.name.clone()).collect();
-        let mut opts: Vec<&str> = area_names.iter().map(|s| s.as_str()).collect();
-        opts.push("返回");
+    /// Execute a built-in command.  Returns `true` if the game should quit.
+    fn execute_cmd(&mut self, cmd: BuiltinCmd) -> bool {
+        match cmd {
+            BuiltinCmd::Ls { path } => self.cmd_ls(path),
+            BuiltinCmd::Cd { path } => self.cmd_cd(&path),
+            BuiltinCmd::Cat { file } => self.cmd_cat(&file),
+            BuiltinCmd::EchoTo { content, file } => self.cmd_echo_to(&content, &file),
+            BuiltinCmd::Grep { pattern } => self.cmd_grep(&pattern),
+            BuiltinCmd::Farm => self.farm_menu(),
+            BuiltinCmd::Breed => self.breed_menu(),
+            BuiltinCmd::Rest => self.rest_menu(),
+            BuiltinCmd::Status => self.status_menu(),
+            BuiltinCmd::Save => {
+                match self.save_game() {
+                    Ok(()) => crate::ui::print_message("✅ 游戏已保存！"),
+                    Err(e) => crate::ui::print_message(&format!("保存错误：{}", e)),
+                }
+                crate::ui::wait_for_enter();
+            }
+            BuiltinCmd::Quit => {
+                crate::ui::print_message("再见！");
+                return true;
+            }
+        }
+        false
+    }
 
-        let choice = crate::ui::print_menu("选择区域", &opts);
+    // ── Built-in command handlers ─────────────────────────────────────────────
 
-        if choice >= self.areas.len() {
+    fn cmd_ls(&self, path: Option<String>) {
+        let area = path.as_deref().unwrap_or(&self.current_area);
+        let files = self.world.list_area_files(area);
+        println!("📂 world/{}/", area);
+        if files.is_empty() {
+            println!("   （空）");
+        } else {
+            for f in &files {
+                println!("   {}", f);
+            }
+        }
+        crate::ui::wait_for_enter();
+    }
+
+    /// `cd <path>` — navigate to another area, triggering an encounter if
+    /// moving to a named area different from the current one.
+    fn cmd_cd(&mut self, path: &str) {
+        let target = match path {
+            "~" => DEFAULT_START_AREA.to_string(),
+            ".." => DEFAULT_START_AREA.to_string(),
+            other => other.to_string(),
+        };
+
+        // Validate the target is a known area.
+        let area = self.areas.iter().find(|a| a.name == target).cloned();
+        let Some(area) = area else {
+            println!("❌ 未知区域：\"{}\"", target);
+            println!("   可用区域：");
+            for a in &self.areas {
+                println!("     {}  (Lv.{} 要求)", a.name, a.level_req);
+            }
+            crate::ui::wait_for_enter();
             return;
-        }
+        };
 
-        let target_area = self.areas[choice].name.clone();
+        let is_new_area = target != self.current_area;
+        let trigger_explore = is_new_area && path != "~" && path != "..";
 
-        // ── Player movement: move player.yaml to the target area directory ──
-        if target_area != self.current_area {
+        if is_new_area {
             crate::ui::print_message(&format!(
-                    "📂 正在将 player.yaml 从 world/{} 移动到 world/{}...",
-                    self.current_area, target_area
-                ));
-            match self.world.move_player(&self.current_area, &target_area) {
+                "📂 正在将 player.yaml 从 world/{} 移动到 world/{}...",
+                self.current_area, target
+            ));
+            match self.world.move_player(&self.current_area, &target) {
                 Ok(()) => {
-                    self.current_area = target_area.clone();
+                    self.current_area = target.clone();
                 }
                 Err(e) => {
                     crate::ui::print_message(&format!("移动失败：{}", e));
@@ -251,13 +285,75 @@ impl GameState {
                     return;
                 }
             }
+        } else {
+            println!("📍 已在 {} 中。", self.current_area);
         }
 
-        crate::ui::print_message(&format!("正在探索 {}...", target_area));
+        if trigger_explore {
+            self.run_explore(&area);
+        } else {
+            crate::ui::wait_for_enter();
+        }
+    }
 
-        match explore(&self.player, choice) {
+    fn cmd_cat(&self, file: &str) {
+        if file.is_empty() {
+            println!("用法：cat <文件名>");
+            crate::ui::wait_for_enter();
+            return;
+        }
+        match self.world.read_entity_raw(&self.current_area, file) {
+            Ok(content) => {
+                println!("📄 world/{}/{}:", self.current_area, file);
+                println!("{}", content);
+            }
+            Err(e) => println!("❌ 无法读取文件：{}", e),
+        }
+        crate::ui::wait_for_enter();
+    }
+
+    fn cmd_echo_to(&self, content: &str, file: &str) {
+        if file.is_empty() {
+            println!("用法：echo <内容> > <文件名>");
+            crate::ui::wait_for_enter();
+            return;
+        }
+        match self.world.write_entity_raw(&self.current_area, file, content) {
+            Ok(()) => println!("✅ 已写入 world/{}/{}", self.current_area, file),
+            Err(e) => println!("❌ 写入失败：{}", e),
+        }
+        crate::ui::wait_for_enter();
+    }
+
+    fn cmd_grep(&self, pattern: &str) {
+        if pattern.is_empty() {
+            println!("用法：find <关键词>");
+            crate::ui::wait_for_enter();
+            return;
+        }
+        let results = self.world.search_area(&self.current_area, pattern);
+        println!("🔍 在 world/{}/ 中搜索 \"{}\"：", self.current_area, pattern);
+        if results.is_empty() {
+            println!("   未找到匹配结果。");
+        } else {
+            for (filename, lines) in &results {
+                println!("  📄 {}", filename);
+                for (lineno, text) in lines {
+                    println!("     {}:  {}", lineno, text);
+                }
+            }
+        }
+        crate::ui::wait_for_enter();
+    }
+
+    // ── Exploration encounter ─────────────────────────────────────────────────
+
+    /// Run an exploration encounter in `area`.
+    fn run_explore(&mut self, area: &Area) {
+        crate::ui::print_message(&format!("正在探索 {}...", area.name));
+
+        match explore(&self.player, area) {
             Ok(ExploreResult::Enemy(mut enemy)) => {
-                // Spawn enemy as a file in the current area directory.
                 let enemy_file = format!("enemy_{}.yaml", sanitize_filename(&enemy.name));
                 let enemy_data = serde_json::json!({
                     "type": "enemy",
@@ -294,7 +390,6 @@ impl GameState {
                                 self.player.level
                             ));
                         }
-                        // Enemy defeated → remove its file.
                         let _ = self.world.remove_entity(&self.current_area, &enemy_file);
                     }
                     CombatResult::Defeat => {
@@ -313,7 +408,6 @@ impl GameState {
                 crate::ui::print_message(&format!("在地上发现了 {} 金币！", gold));
             }
             Ok(ExploreResult::Item(item)) => {
-                // Create an item file, then immediately "collect" it.
                 let item_file = format!("item_{}.yaml", sanitize_filename(&item));
                 let item_data = serde_json::json!({ "type": "item", "name": item });
                 let _ = self
@@ -333,6 +427,13 @@ impl GameState {
 
         self.sync_state();
         crate::ui::wait_for_enter();
+    }
+
+    // ── Save / Load ───────────────────────────────────────────────────────────
+
+    fn save_game(&self) -> Result<(), String> {
+        self.sync_state();
+        Ok(())
     }
 
     // ── Farming ───────────────────────────────────────────────────────────────
@@ -356,7 +457,12 @@ impl GameState {
                             i
                         );
                     }
-                    None => println!("  地块 {}：空地  [world/{}/plot_{}.yaml]", i + 1, FARM_AREA, i),
+                    None => println!(
+                        "  地块 {}：空地  [world/{}/plot_{}.yaml]",
+                        i + 1,
+                        FARM_AREA,
+                        i
+                    ),
                 }
             }
             crate::ui::print_separator();
@@ -373,15 +479,15 @@ impl GameState {
     }
 
     fn plant_crop(&mut self) {
-        let crop_types = Farm::get_crop_types();
-        let crop_names: Vec<String> = crop_types
+        let crop_names: Vec<String> = self
+            .crop_types
             .iter()
-            .map(|(n, secs, gold)| format!("{} ({}s -> {}g)", n, secs, gold))
+            .map(|c| format!("{} ({}s → {}g)", c.name, c.grow_time_secs, c.yield_gold))
             .collect();
         let mut opts: Vec<&str> = crop_names.iter().map(|s| s.as_str()).collect();
         opts.push("返回");
         let crop_choice = crate::ui::print_menu("选择作物", &opts);
-        if crop_choice >= crop_types.len() {
+        if crop_choice >= self.crop_types.len() {
             return;
         }
 
@@ -406,7 +512,8 @@ impl GameState {
         let plot_choice = crate::ui::print_menu("选择地块", &plot_opts);
         let plot_idx = empty_plots[plot_choice];
 
-        match self.farm.plant(plot_idx, crop_choice) {
+        let crop_type = self.crop_types[crop_choice].clone();
+        match self.farm.plant(plot_idx, &crop_type) {
             Ok(()) => {
                 crate::ui::print_message("作物已种植！");
                 self.world.sync_farm(&self.farm).ok();
@@ -465,11 +572,23 @@ impl GameState {
             for (i, animal) in self.farm.animals.iter().enumerate() {
                 if animal.breeding {
                     let status = if animal.is_ready() { "可以收集！" } else { "繁殖中..." };
-                    println!("  {}. {} - {}  [world/{}/{}.yaml]", i + 1, animal.name, status, FARM_AREA, animal.name);
+                    println!(
+                        "  {}. {} - {}  [world/{}/{}.yaml]",
+                        i + 1,
+                        animal.name,
+                        status,
+                        FARM_AREA,
+                        animal.name
+                    );
                 } else {
                     println!(
                         "  {}. {} - 空闲（{}秒，{}金币）  [world/{}/{}.yaml]",
-                        i + 1, animal.name, animal.breed_time_secs, animal.yield_gold, FARM_AREA, animal.name
+                        i + 1,
+                        animal.name,
+                        animal.breed_time_secs,
+                        animal.yield_gold,
+                        FARM_AREA,
+                        animal.name
                     );
                 }
             }
@@ -592,7 +711,14 @@ impl GameState {
         println!("动物：{}", self.farm.animals.len());
         for animal in &self.farm.animals {
             let status = if animal.breeding { "繁殖中" } else { "空闲" };
-            println!("  {} - {}  [world/{}/{}.yaml]", animal.name, status, FARM_AREA, animal.name);
+            println!(
+                "  {} - {}  [world/{}/{}.yaml]",
+                animal.name, status, FARM_AREA, animal.name
+            );
+        }
+        println!("\n可探索区域：");
+        for area in &self.areas {
+            println!("  {}  (Lv.{} 要求，敌人等级 {})", area.name, area.level_req, area.enemy_level);
         }
         crate::ui::wait_for_enter();
     }
@@ -601,6 +727,12 @@ impl GameState {
 /// Sanitize a string for use as a filename component.
 fn sanitize_filename(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
