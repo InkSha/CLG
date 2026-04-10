@@ -1,37 +1,39 @@
+//! Farming and animal breeding subsystem.
+//!
+//! Time-based mechanics: crops and animals use Unix timestamps to track
+//! readiness, checked on demand (no scheduler required).
+
 use serde::{Deserialize, Serialize};
 
-use crate::world::current_unix_secs;
+use super::current_unix_secs;
 
 // ── Config types (loaded from data files) ────────────────────────────────────
 
-/// Configurable crop type loaded from `world/config/crops.yaml`.
-#[derive(Serialize, Deserialize, Clone)]
+/// A crop type that can be planted.
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct CropType {
     pub name: String,
     pub grow_time_secs: u64,
     pub yield_gold: u32,
 }
 
-/// Configurable animal type loaded from `world/config/animals.yaml`.
-#[derive(Serialize, Deserialize, Clone)]
+/// An animal type that can be bred.
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AnimalType {
     pub name: String,
     pub breed_time_secs: u64,
     pub yield_gold: u32,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Crop {
     pub name: String,
     pub grow_time_secs: u64,
     pub yield_gold: u32,
-    /// Unix timestamp (seconds) when this crop was planted.
-    /// Used to check readiness without an external scheduler.
     pub planted_at_secs: Option<u64>,
 }
 
 impl Crop {
-    /// Returns true once the grow time has elapsed since planting.
     pub fn is_ready(&self) -> bool {
         self.planted_at_secs
             .map(|t| current_unix_secs() >= t + self.grow_time_secs)
@@ -39,18 +41,16 @@ impl Crop {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Animal {
     pub name: String,
     pub breed_time_secs: u64,
     pub yield_gold: u32,
     pub breeding: bool,
-    /// Unix timestamp (seconds) when breeding was started.
     pub breed_started_at_secs: Option<u64>,
 }
 
 impl Animal {
-    /// Returns true once the breed time has elapsed since breeding began.
     pub fn is_ready(&self) -> bool {
         self.breeding
             && self
@@ -60,14 +60,13 @@ impl Animal {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Farm {
     pub plots: Vec<Option<Crop>>,
     pub animals: Vec<Animal>,
 }
 
 impl Farm {
-    /// Create a farm from configurable animal types with `num_plots` empty plots.
     pub fn from_types(animal_types: &[AnimalType], num_plots: usize) -> Self {
         Farm {
             plots: vec![None; num_plots],
@@ -84,32 +83,28 @@ impl Farm {
         }
     }
 
-    /// Default crop types (used when no `world/config/crops.yaml` exists).
     pub fn default_crop_types() -> Vec<CropType> {
         vec![
-            CropType { name: "小麦".to_string(), grow_time_secs: 30, yield_gold: 10 },
-            CropType { name: "土豆".to_string(), grow_time_secs: 60, yield_gold: 25 },
-            CropType { name: "胡萝卜".to_string(), grow_time_secs: 45, yield_gold: 18 },
+            CropType { name: "小麦".into(), grow_time_secs: 30, yield_gold: 10 },
+            CropType { name: "土豆".into(), grow_time_secs: 60, yield_gold: 25 },
+            CropType { name: "胡萝卜".into(), grow_time_secs: 45, yield_gold: 18 },
         ]
     }
 
-    /// Default animal types (used when no `world/config/animals.yaml` exists).
     pub fn default_animal_types() -> Vec<AnimalType> {
         vec![
-            AnimalType { name: "鸡".to_string(), breed_time_secs: 120, yield_gold: 15 },
-            AnimalType { name: "牛".to_string(), breed_time_secs: 300, yield_gold: 50 },
-            AnimalType { name: "羊".to_string(), breed_time_secs: 180, yield_gold: 25 },
+            AnimalType { name: "鸡".into(), breed_time_secs: 120, yield_gold: 15 },
+            AnimalType { name: "牛".into(), breed_time_secs: 300, yield_gold: 50 },
+            AnimalType { name: "羊".into(), breed_time_secs: 180, yield_gold: 25 },
         ]
     }
 
-    /// Plant a crop in the given plot, recording the current time as the
-    /// planting timestamp.
     pub fn plant(&mut self, plot_idx: usize, crop: &CropType) -> Result<(), String> {
         if plot_idx >= self.plots.len() {
-            return Err("无效地块索引。".to_string());
+            return Err("无效地块索引。".into());
         }
         if self.plots[plot_idx].is_some() {
-            return Err("该地块已被占用。".to_string());
+            return Err("该地块已被占用。".into());
         }
         self.plots[plot_idx] = Some(Crop {
             name: crop.name.clone(),
@@ -120,7 +115,6 @@ impl Farm {
         Ok(())
     }
 
-    /// Harvest a ready crop, returning its gold value.
     pub fn harvest(&mut self, plot_idx: usize) -> Option<u32> {
         if plot_idx >= self.plots.len() {
             return None;
@@ -135,7 +129,6 @@ impl Farm {
         }
     }
 
-    /// Start breeding an idle animal, recording the current time.
     pub fn start_breeding(&mut self, animal_idx: usize) -> Result<(), String> {
         let animal = self.animals.get_mut(animal_idx).ok_or("无效动物索引。")?;
         if animal.breeding {
@@ -146,7 +139,6 @@ impl Farm {
         Ok(())
     }
 
-    /// Collect a ready animal's yield, returning its gold value.
     pub fn collect_animal(&mut self, animal_idx: usize) -> Option<u32> {
         let animal = self.animals.get_mut(animal_idx)?;
         if !animal.is_ready() {
