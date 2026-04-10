@@ -39,10 +39,10 @@ cargo run
 1. 首次启动时输入角色名。
 2. 主界面显示当前区域、区域内文件，以及从 `world/action.yaml` 读取的全部可用指令。
 3. 输入指令并按 **Enter**。
-4. 使用 `go <区域>` 或 `explor <区域>` 前往其他区域（触发遭遇事件）。
+4. 使用 `explor <区域>`（或已添加的 `cd <区域>`）前往其他区域（触发遭遇事件）。
 5. 击败敌人获取经验和金币，升级解锁更强区域。
-6. 使用 `farm` 管理农场，`breed` 管理动物繁殖。
-7. 使用 `save` 保存进度，`quit` 退出游戏。
+6. 在 `world/action.yaml` 中添加对应条目后，即可使用 `farm` 管理农场、`breed` 管理动物繁殖。
+7. 使用 `save` 保存进度，`exit`（或 `quit`）退出游戏。
 
 ### 示例游戏会话
 
@@ -55,20 +55,9 @@ cargo run
 ──────────────────────────────────────────────────
 📋 可用指令：
   back                  cd ..
-  breed                 breed
   explor                cd $1
-  farm                  farm
-  find                  grep $1
-  go                    cd $1
-  go home               cd ~
-  open world            ls .
-  quit                  quit
-  read                  cat $1
-  rest                  rest
-  save                  save
-  status                status
 
-> go 黑暗洞穴
+> explor 黑暗洞穴
 ```
 
 ## 世界目录结构
@@ -105,41 +94,52 @@ world/
 
 将玩家输入的指令映射到内置操作。键可以包含空格；值为内置指令字符串，`$1`、`$2`…… 会被玩家输入的实际参数替换。
 
+默认情况下仅激活 **`explor`** 和 **`back`** 两条指令。将下方任意条目复制到 `world/action.yaml` 即可启用对应的 Linux 风格命令。
+
 ```yaml
-open world: ls .
-explor: cd $1
-go home: cd ~
-quit: quit
-save: save
-read: cat $1
-back: cd ..
-go: cd $1
-find: grep $1
-farm: farm
-breed: breed
-rest: rest
-status: status
+# --- 导航（默认已启用）---
+explor: cd $1          # 进入区域
+back: cd ..            # 返回初始区域
+
+# --- 常用 Linux 运维命令（按需添加）---
+ls: ls .               # 列出当前区域的文件
+ls $1: ls $1           # 列出指定区域的文件
+cd: cd $1              # explor 的别名
+pwd: status            # 显示当前位置/玩家属性
+cat: cat $1            # 显示 YAML 实体文件内容
+grep: grep $1          # 在文件名和内容中搜索
+echo $1 > $2: echo $1 > $2  # 向文件写入文本
+ps: status             # 显示玩家属性（进程列表类比）
+top: status            # 显示玩家属性（top 命令类比）
+df: status             # 显示玩家属性（磁盘占用类比）
+save: save             # 保存游戏状态
+exit: quit             # 退出游戏
+farm: farm             # 打开农场子菜单
+breed: breed           # 打开动物繁殖子菜单
+rest: rest             # 休息并恢复生命值
 ```
 
 区域专属覆盖存放于 `world/<区域>/action.yaml`，会合并到全局映射之上（区域键优先）。
 
 ### 内置指令
 
-| 内置指令             | 说明                                          |
-|---------------------|-----------------------------------------------|
-| `ls [路径]`          | 列出当前（或指定）区域的实体文件              |
-| `cd <区域>`          | 移动到指定区域并触发探索遭遇                  |
-| `cd ~`               | 回到起始区域，不触发遭遇                      |
-| `cd ..`              | 回到起始区域，不触发遭遇                      |
-| `cat <文件>`         | 读取并显示 YAML 实体文件内容                  |
-| `echo <内容> > <f>`  | 向当前区域的文件写入文本内容                  |
-| `grep <关键词>`      | 在当前区域的文件名和内容中搜索                |
-| `farm`               | 打开农场子菜单                                |
-| `breed`              | 打开动物繁殖子菜单                            |
-| `rest`               | 休息并恢复生命值（花费 20 金币 → 回复 30 HP） |
-| `status`             | 显示玩家属性和区域列表                        |
-| `save`               | 保存游戏状态到磁盘                            |
-| `quit`               | 退出游戏                                      |
+以下内置指令始终可由引擎执行。在 `world/action.yaml` 中添加对应条目，即可以 Linux 风格的命令名将其暴露给玩家。
+
+| 内置指令             | 建议的 action.yaml 条目                   | 说明                                          |
+|---------------------|-------------------------------------------|-----------------------------------------------|
+| `ls [路径]`          | `ls: ls .` / `ls $1: ls $1`              | 列出当前（或指定）区域的实体文件              |
+| `cd <区域>`          | `cd: cd $1` / `explor: cd $1`            | 移动到指定区域并触发探索遭遇                  |
+| `cd ~`               | *(手动导航回初始区域)*                    | 回到初始区域，不触发遭遇                      |
+| `cd ..`              | `back: cd ..`                             | 回到初始区域（等同于 `cd ~`，非父目录导航）           |
+| `cat <文件>`         | `cat: cat $1`                             | 读取并显示 YAML 实体文件内容                  |
+| `echo <内容> > <f>`  | `echo $1 > $2: echo $1 > $2`             | 向当前区域的文件写入文本内容                  |
+| `grep <关键词>`      | `grep: grep $1`                           | 在当前区域的文件名和内容中搜索                |
+| `status`             | `ps: status` / `pwd: status`              | 显示玩家属性和区域列表                        |
+| `farm`               | `farm: farm`                              | 打开农场子菜单                                |
+| `breed`              | `breed: breed`                            | 打开动物繁殖子菜单                            |
+| `rest`               | `rest: rest`                              | 休息并恢复生命值（花费 20 金币 → 回复 30 HP） |
+| `save`               | `save: save`                              | 保存游戏状态到磁盘                            |
+| `quit`               | `exit: quit`                              | 退出游戏                                      |
 
 ### `world/config/areas.yaml` — 区域定义
 
