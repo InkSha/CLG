@@ -39,10 +39,10 @@ cargo run
 1. Enter your character name on first launch.
 2. The main screen shows your current area, the files inside it, and all available commands read from `world/action.yaml`.
 3. Type a command and press **Enter**.
-4. Use `go <area>` or `explor <area>` to travel to another area (triggers an encounter).
+4. Use `explor <area>` (or `cd <area>` if you added it) to travel to another area (triggers an encounter).
 5. Defeat enemies to gain EXP and gold; level up to unlock stronger areas.
-6. Use `farm` to plant/harvest crops, `breed` to manage animals.
-7. Use `save` to persist your progress, `quit` to exit.
+6. Use `farm` to plant/harvest crops, `breed` to manage animals — add those lines to `world/action.yaml` first.
+7. Use `save` to persist your progress, `exit` (or `quit`) to exit.
 
 ### Example session
 
@@ -55,20 +55,9 @@ cargo run
 ──────────────────────────────────────────────────
 📋 可用指令：
   back                  cd ..
-  breed                 breed
   explor                cd $1
-  farm                  farm
-  find                  grep $1
-  go                    cd $1
-  go home               cd ~
-  open world            ls .
-  quit                  quit
-  read                  cat $1
-  rest                  rest
-  save                  save
-  status                status
 
-> go 黑暗洞穴
+> explor 黑暗洞穴
 ```
 
 ## World Directory Layout
@@ -105,41 +94,52 @@ world/
 
 Maps user-typed commands to built-in operations. Keys may contain spaces; values are built-in command strings. `$1`, `$2`, … are replaced with the arguments the player provides.
 
+Only **`explor`** and **`back`** are active by default. Copy any of the entries below into `world/action.yaml` to unlock the corresponding Linux-style commands.
+
 ```yaml
-open world: ls .
-explor: cd $1
-go home: cd ~
-quit: quit
-save: save
-read: cat $1
-back: cd ..
-go: cd $1
-find: grep $1
-farm: farm
-breed: breed
-rest: rest
-status: status
+# --- navigation (always present) ---
+explor: cd $1          # enter an area
+back: cd ..            # return home
+
+# --- common Linux ops commands (add as needed) ---
+ls: ls .               # list current area
+ls $1: ls $1           # list named area
+cd: cd $1              # alias for explor
+pwd: status            # show current location / player stats
+cat: cat $1            # display a YAML entity file
+grep: grep $1          # search file names & content
+echo $1 > $2: echo $1 > $2  # write text to a file
+ps: status             # show player stats (process-list metaphor)
+top: status            # show player stats (top metaphor)
+df: status             # show player stats (disk-free metaphor)
+save: save             # persist game state
+exit: quit             # exit the game
+farm: farm             # open farming sub-menu
+breed: breed           # open animal-breeding sub-menu
+rest: rest             # recover HP
 ```
 
 Per-area overrides live in `world/<area>/action.yaml` and are merged on top of the global map (area keys win).
 
 ### Built-in Commands
 
-| Built-in            | Description                                         |
-|---------------------|-----------------------------------------------------|
-| `ls [path]`         | List entity files in the current (or named) area    |
-| `cd <area>`         | Move to a named area and trigger an exploration encounter |
-| `cd ~`              | Return home without triggering an encounter         |
-| `cd ..`             | Return home without triggering an encounter         |
-| `cat <file>`        | Read and display a YAML entity file                 |
-| `echo <text> > <f>` | Write text to a file in the current area            |
-| `grep <pattern>`    | Search file names and content in the current area   |
-| `farm`              | Open the farming sub-menu                           |
-| `breed`             | Open the animal breeding sub-menu                   |
-| `rest`              | Rest and recover HP (costs 20 gold → +30 HP)        |
-| `status`            | Display player stats and area list                  |
-| `save`              | Save game state to disk                             |
-| `quit`              | Exit the game                                       |
+The following built-ins are always available in the engine. Add the corresponding entry to `world/action.yaml` to expose them under a Linux-style command name.
+
+| Built-in            | Suggested action.yaml entry         | Description                                         |
+|---------------------|--------------------------------------|-----------------------------------------------------|
+| `ls [path]`         | `ls: ls .` / `ls $1: ls $1`         | List entity files in the current (or named) area    |
+| `cd <area>`         | `cd: cd $1` / `explor: cd $1`       | Move to a named area and trigger an exploration encounter |
+| `cd ~`              | *(navigate home manually)*           | Return home without triggering an encounter         |
+| `cd ..`             | `back: cd ..`                        | Return to the start area (treated as home, not parent navigation) |
+| `cat <file>`        | `cat: cat $1`                        | Read and display a YAML entity file                 |
+| `echo <text> > <f>` | `echo $1 > $2: echo $1 > $2`        | Write text to a file in the current area            |
+| `grep <pattern>`    | `grep: grep $1`                      | Search file names and content in the current area   |
+| `status`            | `ps: status` / `pwd: status`         | Display player stats and area list                  |
+| `farm`              | `farm: farm`                         | Open the farming sub-menu                           |
+| `breed`             | `breed: breed`                       | Open the animal breeding sub-menu                   |
+| `rest`              | `rest: rest`                         | Rest and recover HP (costs 20 gold → +30 HP)        |
+| `save`              | `save: save`                         | Save game state to disk                             |
+| `quit`              | `exit: quit`                         | Exit the game                                       |
 
 ### `world/config/areas.yaml` — Area Definitions
 

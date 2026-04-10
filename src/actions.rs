@@ -3,22 +3,33 @@
 //! Actions are loaded from `action.yaml` files which map user-visible
 //! command names (possibly multi-word) to built-in command strings.
 //!
+//! By default only `explor` and `back` are active. Add any of the entries
+//! below to `world/action.yaml` to enable the corresponding Linux-style
+//! commands.
+//!
 //! # `action.yaml` format
 //!
 //! ```yaml
-//! open world: ls .
-//! explor: cd $1
-//! go home: cd ~
-//! quit: quit
-//! save: save
-//! read: cat $1
-//! back: cd ..
-//! go: cd $1
-//! find: grep $1
-//! farm: farm
-//! breed: breed
-//! rest: rest
-//! status: status
+//! # --- navigation (always present) ---
+//! explor: cd $1          # enter an area
+//! back: cd ..            # return to start area (treated as home, not parent)
+//!
+//! # --- common Linux ops commands (add as needed) ---
+//! ls: ls .               # list current area
+//! ls $1: ls $1           # list named area
+//! cd: cd $1              # alias for explor
+//! pwd: status            # show current location / player stats
+//! cat: cat $1            # display a YAML entity file
+//! grep: grep $1          # search file names & content
+//! echo $1 > $2: echo $1 > $2  # write text to a file
+//! ps: status             # show player stats (process-list metaphor)
+//! top: status            # show player stats (top metaphor)
+//! df: status             # show player stats (disk-free metaphor)
+//! save: save             # persist game state
+//! exit: quit             # exit the game
+//! farm: farm             # open farming sub-menu
+//! breed: breed           # open animal-breeding sub-menu
+//! rest: rest             # recover HP
 //! ```
 //!
 //! `$1`, `$2`, … are replaced with the actual arguments supplied by the
@@ -87,19 +98,8 @@ impl ActionMap {
     /// Return the default built-in action map.
     pub fn default_map() -> Self {
         let mut m = HashMap::new();
-        m.insert("open world".to_string(), "ls .".to_string());
         m.insert("explor".to_string(), "cd $1".to_string());
-        m.insert("go home".to_string(), "cd ~".to_string());
-        m.insert("quit".to_string(), "quit".to_string());
-        m.insert("save".to_string(), "save".to_string());
-        m.insert("read".to_string(), "cat $1".to_string());
         m.insert("back".to_string(), "cd ..".to_string());
-        m.insert("go".to_string(), "cd $1".to_string());
-        m.insert("find".to_string(), "grep $1".to_string());
-        m.insert("farm".to_string(), "farm".to_string());
-        m.insert("breed".to_string(), "breed".to_string());
-        m.insert("rest".to_string(), "rest".to_string());
-        m.insert("status".to_string(), "status".to_string());
         ActionMap(m)
     }
 
