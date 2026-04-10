@@ -11,7 +11,8 @@ A terminal simulation/management RPG written in Rust. Explore dangerous areas, b
 - **Breeding** — Raise Chicken, Cow, and Sheep. Start breeding and collect gold rewards when the timer completes.
 - **Character Progression** — Gain EXP and gold from combat/exploration. Level up to increase HP, ATK, and DEF.
 - **Rest** — Spend 20g to recover 30 HP at any time.
-- **Save / Load** — Game state (player + farm) is persisted to `save.json` in the current directory.
+- **Filesystem-driven World** — All game state (player, farm plots, animals, areas) is persisted as **YAML** files under the `world/` directory.
+- **Entity Templates** — Drop a `*.template.yaml` file anywhere inside `world/` to procedurally generate entity YAML files from a schema.
 
 ## Requirements
 
@@ -38,3 +39,61 @@ cargo run
 4. **Farm** — plant crops in empty plots; they complete after a fixed number of seconds and can then be harvested for gold.
 5. **Breed Animals** — start a breeding cycle and collect the reward when the timer finishes.
 6. Defeat enemies to gain EXP and gold; level up to unlock stronger areas.
+
+## World Directory Layout
+
+```
+world/
+├── 森林/
+│   ├── area.yaml          ← area metadata
+│   └── player.yaml        ← player data (present when player is here)
+├── 黑暗洞穴/
+│   └── area.yaml
+├── 农场/
+│   ├── plot_0.yaml        ← farm plot state
+│   ├── plot_1.yaml
+│   ├── 鸡.yaml            ← animal state
+│   └── …
+└── templates/
+    ├── player.template.yaml   ← built-in entity templates
+    ├── enemy.template.yaml
+    ├── area.template.yaml
+    ├── crop.template.yaml
+    └── animal.template.yaml
+```
+
+## Entity Templates
+
+Templates let you define how entity YAML files are generated without touching Rust code. Place a `*.template.yaml` file in any subdirectory of `world/`; on startup the game automatically generates the `output` file in the same directory.
+
+Example `enemy.template.yaml`:
+
+```yaml
+entity: enemy
+output: enemy_generated.yaml
+schema:
+  name:
+    type: string
+    format: enemy_name
+  hp:
+    type: integer
+    range: [20, 80]
+  skills:
+    type: array
+    length: [0, 5]
+    items:
+      - type: string
+```
+
+### Supported field types
+
+| `type`    | Extra keys                              |
+|-----------|-----------------------------------------|
+| `string`  | `length`, `format`, `value`             |
+| `integer` | `range`, `value`                        |
+| `float`   | `range`, `value`                        |
+| `boolean` | `value`                                 |
+| `array`   | `length` (required), `items` (required) |
+| `object`  | `fields` (required)                     |
+
+String `format` options: `name` (Chinese personal name), `enemy_name`, `area_name`, `description`, `crop_name`, `animal_name`, `word`.

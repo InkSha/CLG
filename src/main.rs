@@ -3,6 +3,7 @@ mod player;
 mod combat;
 mod exploration;
 mod farming;
+mod template;
 mod world;
 mod ui;
 

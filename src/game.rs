@@ -28,6 +28,16 @@ impl GameState {
         // Create area directories + area.json metadata files.
         world.init_areas(&areas).expect("无法创建区域目录");
 
+        // Write built-in template files (once, if absent) and apply any templates.
+        world.init_templates().expect("无法初始化模板目录");
+        let generated = world.scan_and_apply_templates();
+        if !generated.is_empty() {
+            println!("📋 从模板生成了以下实体文件：");
+            for (tmpl, out) in &generated {
+                println!("   {} → {}", tmpl, out);
+            }
+        }
+
         // Find the area that already holds player.json, or default to 森林.
         let current_area = world
             .find_player_area(&area_names)
@@ -52,7 +62,7 @@ impl GameState {
         let farm = world.load_farm(&farm_template).unwrap_or(farm_template);
 
         println!(
-            "\n📁 世界目录已就绪：world/\n   玩家文件：world/{}/player.json",
+            "\n📁 世界目录已就绪：world/\n   玩家文件：world/{}/player.yaml",
             current_area
         );
         crate::ui::wait_for_enter();
@@ -109,6 +119,13 @@ impl GameState {
                     WorldEvent::EntityRemoved { area, filename } => {
                         println!("  🗑  删除：world/{}/{}", area, filename);
                     }
+                    WorldEvent::TemplateChanged { path } => {
+                        println!("  📋 模板变更：world/{}", path);
+                        match self.world.reapply_template(&path) {
+                            Ok(out) => println!("     ✅ 已重新生成：{}", out),
+                            Err(e)  => println!("     ⚠️  重新生成失败：{}", e),
+                        }
+                    }
                 }
             }
             crate::ui::print_separator();
@@ -122,7 +139,7 @@ impl GameState {
             crate::ui::print_player_status(&self.player);
             println!("当前位置：{}", self.current_area);
             println!(
-                "📁 world/{}/player.json",
+                "📁 world/{}/player.yaml",
                 self.current_area
             );
             crate::ui::print_separator();
@@ -218,12 +235,12 @@ impl GameState {
 
         let target_area = self.areas[choice].name.clone();
 
-        // ── Player movement: move player.json to the target area directory ──
+        // ── Player movement: move player.yaml to the target area directory ──
         if target_area != self.current_area {
             crate::ui::print_message(&format!(
-                "📂 正在将 player.json 从 world/{} 移动到 world/{}...",
-                self.current_area, target_area
-            ));
+                    "📂 正在将 player.yaml 从 world/{} 移动到 world/{}...",
+                    self.current_area, target_area
+                ));
             match self.world.move_player(&self.current_area, &target_area) {
                 Ok(()) => {
                     self.current_area = target_area.clone();
@@ -241,7 +258,7 @@ impl GameState {
         match explore(&self.player, choice) {
             Ok(ExploreResult::Enemy(mut enemy)) => {
                 // Spawn enemy as a file in the current area directory.
-                let enemy_file = format!("enemy_{}.json", sanitize_filename(&enemy.name));
+                let enemy_file = format!("enemy_{}.yaml", sanitize_filename(&enemy.name));
                 let enemy_data = serde_json::json!({
                     "type": "enemy",
                     "name": enemy.name,
@@ -297,7 +314,7 @@ impl GameState {
             }
             Ok(ExploreResult::Item(item)) => {
                 // Create an item file, then immediately "collect" it.
-                let item_file = format!("item_{}.json", sanitize_filename(&item));
+                let item_file = format!("item_{}.yaml", sanitize_filename(&item));
                 let item_data = serde_json::json!({ "type": "item", "name": item });
                 let _ = self
                     .world
@@ -331,7 +348,7 @@ impl GameState {
                     Some(crop) => {
                         let status = if crop.is_ready() { "可以收获！" } else { "生长中..." };
                         println!(
-                            "  地块 {}：{} - {}  [world/{}/plot_{}.json]",
+                            "  地块 {}：{} - {}  [world/{}/plot_{}.yaml]",
                             i + 1,
                             crop.name,
                             status,
@@ -339,7 +356,7 @@ impl GameState {
                             i
                         );
                     }
-                    None => println!("  地块 {}：空地  [world/{}/plot_{}.json]", i + 1, FARM_AREA, i),
+                    None => println!("  地块 {}：空地  [world/{}/plot_{}.yaml]", i + 1, FARM_AREA, i),
                 }
             }
             crate::ui::print_separator();
@@ -448,10 +465,10 @@ impl GameState {
             for (i, animal) in self.farm.animals.iter().enumerate() {
                 if animal.breeding {
                     let status = if animal.is_ready() { "可以收集！" } else { "繁殖中..." };
-                    println!("  {}. {} - {}  [world/{}/{}.json]", i + 1, animal.name, status, FARM_AREA, animal.name);
+                    println!("  {}. {} - {}  [world/{}/{}.yaml]", i + 1, animal.name, status, FARM_AREA, animal.name);
                 } else {
                     println!(
-                        "  {}. {} - 空闲（{}秒，{}金币）  [world/{}/{}.json]",
+                        "  {}. {} - 空闲（{}秒，{}金币）  [world/{}/{}.yaml]",
                         i + 1, animal.name, animal.breed_time_secs, animal.yield_gold, FARM_AREA, animal.name
                     );
                 }
@@ -575,7 +592,7 @@ impl GameState {
         println!("动物：{}", self.farm.animals.len());
         for animal in &self.farm.animals {
             let status = if animal.breeding { "繁殖中" } else { "空闲" };
-            println!("  {} - {}  [world/{}/{}.json]", animal.name, status, FARM_AREA, animal.name);
+            println!("  {} - {}  [world/{}/{}.yaml]", animal.name, status, FARM_AREA, animal.name);
         }
         crate::ui::wait_for_enter();
     }
