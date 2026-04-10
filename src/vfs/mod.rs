@@ -310,7 +310,7 @@ impl Vfs {
     fn read_farm_entity(&self, world: &World, filename: &str) -> Result<String, String> {
         // Try plot
         if let Some(idx_str) = filename.strip_prefix("plot_") {
-            let idx: usize = idx_str.parse().map_err(|_| format!("cat: 无此文件: {}", filename))?;
+            let idx: usize = idx_str.parse().map_err(|_| format!("cat: 无效的地块编号: {}", filename))?;
             if idx >= world.farm.plots.len() {
                 return Err(format!("cat: 无此文件: {}", filename));
             }
