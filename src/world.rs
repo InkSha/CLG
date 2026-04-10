@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::farming::{Animal, Crop, Farm};
 use crate::player::Player;
+use crate::template;
 
 pub const WORLD_DIR: &str = "world";
 pub const FARM_AREA: &str = "农场";
@@ -23,6 +24,8 @@ pub enum WorldEvent {
     EntityCreated { area: String, filename: String },
     /// A non-config entity file was removed from an area.
     EntityRemoved { area: String, filename: String },
+    /// A template file was created or modified; path is relative to `world/`.
+    TemplateChanged { path: String },
 }
 
 /// Filesystem-backed world manager.
@@ -256,6 +259,73 @@ impl WorldManager {
         }
         out
     }
+
+    // ── Template support ──────────────────────────────────────────────────────
+
+    /// Write the built-in example template files to `world/templates/` (once).
+    ///
+    /// Each template file is only written when it does not already exist,
+    /// so user edits are never overwritten.
+    pub fn init_templates(&self) -> Result<(), String> {
+        let dir = self.world_path.join("templates");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        for (filename, content) in template::builtin_templates() {
+            let path = dir.join(filename);
+            if !path.exists() {
+                std::fs::write(&path, content).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Scan `world/` recursively for `*.template.json` files and apply each
+    /// one (generating its output entity file) if the output does not yet exist.
+    ///
+    /// Returns a list of `(template_path, output_path)` pairs for every file
+    /// that was actually generated during this call.
+    pub fn scan_and_apply_templates(&self) -> Vec<(String, String)> {
+        let mut generated = Vec::new();
+        for tmpl_path in template::find_templates(&self.world_path) {
+            match template::load_template(&tmpl_path) {
+                Ok(tmpl) => {
+                    match template::apply_template(&tmpl_path, &tmpl, false) {
+                        Ok(out_path) => {
+                            // Only report when a new file was written.
+                            let out_str = out_path.to_string_lossy().to_string();
+                            let tmpl_str = tmpl_path.to_string_lossy().to_string();
+                            // Only report files that did not exist before apply_template was called.
+                            let tmpl_newer = std::fs::metadata(&tmpl_path)
+                                .and_then(|m| m.modified())
+                                .ok();
+                            let out_mtime = std::fs::metadata(&out_path)
+                                .and_then(|m| m.modified())
+                                .ok();
+                            let newly_written = match (tmpl_newer, out_mtime) {
+                                (Some(t), Some(o)) => t > o,
+                                _ => true,
+                            };
+                            if newly_written {
+                                generated.push((tmpl_str, out_str));
+                            }
+                        }
+                        Err(e) => eprintln!("警告：应用模板 {} 失败: {}", tmpl_path.display(), e),
+                    }
+                }
+                Err(e) => eprintln!("警告：{}", e),
+            }
+        }
+        generated
+    }
+
+    /// Re-apply a single template file (overwriting any existing output).
+    ///
+    /// Used when the watcher emits a [`WorldEvent::TemplateChanged`] event.
+    pub fn reapply_template(&self, relative_path: &str) -> Result<String, String> {
+        let full_path = self.world_path.join(relative_path);
+        let tmpl = template::load_template(&full_path)?;
+        let out = template::apply_template(&full_path, &tmpl, true)?;
+        Ok(out.to_string_lossy().to_string())
+    }
 }
 
 // ── Filesystem entity representations ────────────────────────────────────────
@@ -340,17 +410,25 @@ fn translate_notify_event(event: &Event, world_path: &Path) -> Vec<WorldEvent> {
                 if let Some(to_area) = area_of(to, world_path) {
                     out.push(WorldEvent::PlayerMoved { to_area });
                 }
-            } else {
-                if let (Some(fa), Some(fn_)) = (area_of(from, world_path), from.file_name()) {
-                    let f = fn_.to_string_lossy().to_string();
-                    if !is_internal_file(&f) {
-                        out.push(WorldEvent::EntityRemoved { area: fa, filename: f });
+            } else if let Some(fn_) = to.file_name().and_then(|n| n.to_str()) {
+                if template::is_template_filename(fn_) {
+                    if let Ok(rel) = to.strip_prefix(world_path) {
+                        out.push(WorldEvent::TemplateChanged {
+                            path: rel.to_string_lossy().to_string(),
+                        });
                     }
-                }
-                if let (Some(ta), Some(fn_)) = (area_of(to, world_path), to.file_name()) {
-                    let f = fn_.to_string_lossy().to_string();
-                    if !is_internal_file(&f) {
-                        out.push(WorldEvent::EntityCreated { area: ta, filename: f });
+                } else {
+                    if let (Some(fa), Some(fn_from)) = (area_of(from, world_path), from.file_name()) {
+                        let f = fn_from.to_string_lossy().to_string();
+                        if !is_internal_file(&f) {
+                            out.push(WorldEvent::EntityRemoved { area: fa, filename: f });
+                        }
+                    }
+                    if let Some(ta) = area_of(to, world_path) {
+                        let f = fn_.to_string();
+                        if !is_internal_file(&f) {
+                            out.push(WorldEvent::EntityCreated { area: ta, filename: f });
+                        }
                     }
                 }
             }
@@ -364,23 +442,38 @@ fn translate_notify_event(event: &Event, world_path: &Path) -> Vec<WorldEvent> {
                     if let Some(to_area) = area_of(path, world_path) {
                         out.push(WorldEvent::PlayerMoved { to_area });
                     }
-                } else if let (Some(area), Some(fn_)) =
-                    (area_of(path, world_path), path.file_name())
-                {
-                    let f = fn_.to_string_lossy().to_string();
-                    if !is_internal_file(&f) {
-                        out.push(WorldEvent::EntityCreated { area, filename: f });
+                } else if let Some(fn_) = path.file_name().and_then(|n| n.to_str()) {
+                    if template::is_template_filename(fn_) {
+                        if let Ok(rel) = path.strip_prefix(world_path) {
+                            out.push(WorldEvent::TemplateChanged {
+                                path: rel.to_string_lossy().to_string(),
+                            });
+                        }
+                    } else if let Some(area) = area_of(path, world_path) {
+                        let f = fn_.to_string();
+                        if !is_internal_file(&f) {
+                            out.push(WorldEvent::EntityCreated { area, filename: f });
+                        }
                     }
                 }
             }
         }
-        // File created.
-        EventKind::Create(_) => {
+        // File created or modified (data change).
+        EventKind::Create(_)
+        | EventKind::Modify(notify::event::ModifyKind::Data(_)) => {
             if let Some(path) = event.paths.first() {
-                if let (Some(area), Some(fn_)) = (area_of(path, world_path), path.file_name()) {
-                    let f = fn_.to_string_lossy().to_string();
-                    if !is_internal_file(&f) {
-                        out.push(WorldEvent::EntityCreated { area, filename: f });
+                if let Some(fn_) = path.file_name().and_then(|n| n.to_str()) {
+                    if template::is_template_filename(fn_) {
+                        if let Ok(rel) = path.strip_prefix(world_path) {
+                            out.push(WorldEvent::TemplateChanged {
+                                path: rel.to_string_lossy().to_string(),
+                            });
+                        }
+                    } else if let Some(area) = area_of(path, world_path) {
+                        let f = fn_.to_string();
+                        if !is_internal_file(&f) {
+                            out.push(WorldEvent::EntityCreated { area, filename: f });
+                        }
                     }
                 }
             }
@@ -410,5 +503,7 @@ fn area_of(path: &Path, world_path: &Path) -> Option<String> {
 
 /// Return true for files that are internal config and should not surface as entity events.
 fn is_internal_file(filename: &str) -> bool {
-    filename == "area.json" || filename == PLAYER_FILE
+    filename == "area.json"
+        || filename == PLAYER_FILE
+        || template::is_template_filename(filename)
 }

@@ -28,6 +28,16 @@ impl GameState {
         // Create area directories + area.json metadata files.
         world.init_areas(&areas).expect("无法创建区域目录");
 
+        // Write built-in template files (once, if absent) and apply any templates.
+        world.init_templates().expect("无法初始化模板目录");
+        let generated = world.scan_and_apply_templates();
+        if !generated.is_empty() {
+            println!("📋 从模板生成了以下实体文件：");
+            for (tmpl, out) in &generated {
+                println!("   {} → {}", tmpl, out);
+            }
+        }
+
         // Find the area that already holds player.json, or default to 森林.
         let current_area = world
             .find_player_area(&area_names)
@@ -108,6 +118,13 @@ impl GameState {
                     }
                     WorldEvent::EntityRemoved { area, filename } => {
                         println!("  🗑  删除：world/{}/{}", area, filename);
+                    }
+                    WorldEvent::TemplateChanged { path } => {
+                        println!("  📋 模板变更：world/{}", path);
+                        match self.world.reapply_template(&path) {
+                            Ok(out) => println!("     ✅ 已重新生成：{}", out),
+                            Err(e)  => println!("     ⚠️  重新生成失败：{}", e),
+                        }
                     }
                 }
             }
