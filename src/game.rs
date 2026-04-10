@@ -4,6 +4,7 @@ use crate::{
     exploration::{explore, Area, ExploreResult},
     farming::{CropType, Farm},
     player::Player,
+    ui_template::{render_template, scope_matches, UiContext, UiTemplate},
     world::{WorldEvent, WorldManager, FARM_AREA, PLAYER_FILE, DEFAULT_START_AREA},
 };
 
@@ -16,6 +17,8 @@ pub struct GameState {
     areas: Vec<Area>,
     /// Crop types loaded from config.
     crop_types: Vec<CropType>,
+    /// Active UI template (loaded from world/config/ui.yaml).
+    ui_template: UiTemplate,
 }
 
 impl GameState {
@@ -67,6 +70,9 @@ impl GameState {
         // Load crop types from config.
         let crop_types = world.load_crop_types();
 
+        // Load the UI template.
+        let ui_template = world.load_ui_template();
+
         // Init farm directory; load state from files.
         let farm_template = world.make_default_farm();
         world.init_farm(&farm_template).expect("无法初始化农场目录");
@@ -85,6 +91,7 @@ impl GameState {
             current_area,
             areas,
             crop_types,
+            ui_template,
         }
     }
 
@@ -114,8 +121,41 @@ impl GameState {
         }
     }
 
+    /// Render the UI template for the current area and print it to stdout.
+    ///
+    /// Only renders when the template's scope matches the current area path.
+    fn print_ui(&self) {
+        let area_path = format!("world/{}/", self.current_area);
+        if !scope_matches(&self.ui_template, &area_path) {
+            // Template scope doesn't apply here; fall back to the classic display.
+            crate::ui::print_player_status(&self.player);
+            return;
+        }
+
+        // Build pre-rendered includes.
+        let include_templates = self.world.load_ui_includes(&self.ui_template);
+        let includes = include_templates
+            .iter()
+            .map(|(name, tmpl)| {
+                let inner_ctx = UiContext {
+                    player: &self.player,
+                    current_area: &self.current_area,
+                    includes: std::collections::HashMap::new(),
+                };
+                (name.clone(), render_template(tmpl, &inner_ctx))
+            })
+            .collect();
+
+        let ctx = UiContext {
+            player: &self.player,
+            current_area: &self.current_area,
+            includes,
+        };
+        print!("{}", render_template(&self.ui_template, &ctx));
+    }
+
     /// Print any pending filesystem events from the background watcher.
-    fn display_world_events(&self) {
+    fn display_world_events(&mut self) {
         let events = self.world.poll_events();
         if !events.is_empty() {
             crate::ui::print_separator();
@@ -133,9 +173,17 @@ impl GameState {
                     }
                     WorldEvent::TemplateChanged { path } => {
                         println!("  📋 模板变更：world/{}", path);
-                        match self.world.reapply_template(&path) {
-                            Ok(out) => println!("     ✅ 已重新生成：{}", out),
-                            Err(e) => println!("     ⚠️  重新生成失败：{}", e),
+                        // Reload UI template when config/ui.yaml changes.
+                        let changed_path = std::path::Path::new(&path);
+                        let ui_path = std::path::Path::new("config").join("ui.yaml");
+                        if changed_path == ui_path {
+                            self.ui_template = self.world.load_ui_template();
+                            println!("     🎨 UI 模板已重新加载");
+                        } else {
+                            match self.world.reapply_template(&path) {
+                                Ok(out) => println!("     ✅ 已重新生成：{}", out),
+                                Err(e) => println!("     ⚠️  重新生成失败：{}", e),
+                            }
                         }
                     }
                 }
@@ -150,7 +198,7 @@ impl GameState {
         loop {
             crate::ui::clear_screen();
             crate::ui::print_header();
-            crate::ui::print_player_status(&self.player);
+            self.print_ui();
             println!("📍 当前位置：{}  (world/{}/)", self.current_area, self.current_area);
             crate::ui::print_separator();
 
@@ -679,7 +727,7 @@ impl GameState {
     fn rest_menu(&mut self) {
         crate::ui::clear_screen();
         crate::ui::print_header();
-        crate::ui::print_player_status(&self.player);
+        self.print_ui();
         if self.player.hp >= self.player.max_hp {
             crate::ui::print_message("你的生命值已满！");
         } else if self.player.gold < 20 {
@@ -699,7 +747,7 @@ impl GameState {
     fn status_menu(&self) {
         crate::ui::clear_screen();
         crate::ui::print_header();
-        crate::ui::print_player_status(&self.player);
+        self.print_ui();
         println!("当前位置：{}  (world/{}/)", self.current_area, self.current_area);
         println!("农场地块：{}", self.farm.plots.len());
         let occupied = self.farm.plots.iter().filter(|p| p.is_some()).count();

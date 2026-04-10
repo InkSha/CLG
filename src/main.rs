@@ -7,6 +7,7 @@ mod farming;
 mod template;
 mod world;
 mod ui;
+mod ui_template;
 
 fn main() {
     let mut game = game::GameState::new();

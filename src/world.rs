@@ -113,7 +113,48 @@ impl WorldManager {
             std::fs::write(&action_path, yaml).map_err(|e| e.to_string())?;
         }
 
+        // ui.yaml – default UI template
+        let ui_path = cfg_dir.join("ui.yaml");
+        if !ui_path.exists() {
+            std::fs::write(&ui_path, crate::ui_template::DEFAULT_UI_TEMPLATE)
+                .map_err(|e| e.to_string())?;
+        }
+
         Ok(())
+    }
+
+    /// Load the UI template from `world/config/ui.yaml`, falling back to the
+    /// built-in default template when the file is absent or cannot be parsed.
+    pub fn load_ui_template(&self) -> crate::ui_template::UiTemplate {
+        let path = self.world_path.join(CONFIG_DIR).join("ui.yaml");
+        if path.exists() {
+            match crate::ui_template::load_ui_template(&path) {
+                Ok(t) => return t,
+                Err(e) => eprintln!("⚠️  无法加载 UI 模板：{}", e),
+            }
+        }
+        // Parse the built-in default.
+        serde_yaml::from_str(crate::ui_template::DEFAULT_UI_TEMPLATE)
+            .unwrap_or_default()
+    }
+
+    /// Load all UI templates listed in `template.include` from `world/config/`.
+    ///
+    /// Each include name `"foo"` maps to `world/config/foo.yaml`.
+    /// Templates that cannot be loaded are silently skipped.
+    pub fn load_ui_includes(
+        &self,
+        template: &crate::ui_template::UiTemplate,
+    ) -> std::collections::HashMap<String, crate::ui_template::UiTemplate> {
+        let cfg_dir = self.world_path.join(CONFIG_DIR);
+        let mut map = std::collections::HashMap::new();
+        for name in &template.include {
+            let path = cfg_dir.join(format!("{}.yaml", name));
+            if let Ok(inc) = crate::ui_template::load_ui_template(&path) {
+                map.insert(name.clone(), inc);
+            }
+        }
+        map
     }
 
     /// Load areas from `world/config/areas.yaml`, falling back to built-in defaults.
@@ -631,7 +672,7 @@ fn translate_notify_event(event: &Event, world_path: &Path) -> Vec<WorldEvent> {
         | EventKind::Modify(notify::event::ModifyKind::Data(_)) => {
             if let Some(path) = event.paths.first() {
                 if let Some(fn_) = path.file_name().and_then(|n| n.to_str()) {
-                    if template::is_template_filename(fn_) {
+                    if template::is_template_filename(fn_) || is_ui_config_file(path, world_path) {
                         if let Ok(rel) = path.strip_prefix(world_path) {
                             out.push(WorldEvent::TemplateChanged {
                                 path: rel.to_string_lossy().to_string(),
@@ -681,4 +722,11 @@ fn is_internal_file(filename: &str) -> bool {
         || filename == PLAYER_FILE
         || filename == ACTION_FILE
         || template::is_template_filename(filename)
+}
+
+/// Return true when `path` points to one of the UI config YAML files in
+/// `world/config/` that the game reloads at runtime (e.g. `ui.yaml`).
+fn is_ui_config_file(path: &Path, world_path: &Path) -> bool {
+    let expected = world_path.join(CONFIG_DIR).join("ui.yaml");
+    path == expected
 }
