@@ -1,28 +1,42 @@
 //! Entity template system.
 //!
-//! A *template file* is a JSON file whose name ends with `.template.json`.
+//! A *template file* is a YAML file whose name ends with `.template.yaml`.
 //! Placing such a file in any directory causes the game to generate a concrete
-//! entity JSON file (named by the `output` field) **in that same directory**.
+//! entity YAML file (named by the `output` field) **in that same directory**.
 //! Templates are scoped to their own folder and its subdirectories: they never
 //! generate entities outside the directory tree in which they reside.
 //!
 //! # Template file format
-//! ```json
-//! {
-//!   "entity":  "enemy",
-//!   "output":  "enemy_generated.json",
-//!   "schema": {
-//!     "name":        { "type": "string",  "format": "enemy_name" },
-//!     "hp":          { "type": "integer", "range": [20, 80] },
-//!     "max_hp":      { "type": "integer", "range": [20, 80] },
-//!     "attack":      { "type": "integer", "range": [5, 20]  },
-//!     "defense":     { "type": "integer", "range": [1, 8]   },
-//!     "exp_reward":  { "type": "integer", "range": [10, 40] },
-//!     "gold_reward": { "type": "integer", "range": [3, 15]  },
-//!     "skills":      { "type": "array", "length": [0, 3],
-//!                      "items": [{ "type": "string" }] }
-//!   }
-//! }
+//! ```yaml
+//! entity: enemy
+//! output: enemy_generated.yaml
+//! schema:
+//!   name:
+//!     type: string
+//!     format: enemy_name
+//!   hp:
+//!     type: integer
+//!     range: [20, 80]
+//!   max_hp:
+//!     type: integer
+//!     range: [20, 80]
+//!   attack:
+//!     type: integer
+//!     range: [5, 20]
+//!   defense:
+//!     type: integer
+//!     range: [1, 8]
+//!   exp_reward:
+//!     type: integer
+//!     range: [10, 40]
+//!   gold_reward:
+//!     type: integer
+//!     range: [3, 15]
+//!   skills:
+//!     type: array
+//!     length: [0, 3]
+//!     items:
+//!       - type: string
 //! ```
 //!
 //! # Supported field types
@@ -66,9 +80,9 @@ pub enum StringFormat {
 
 // ── Field schema ──────────────────────────────────────────────────────────────
 
-/// Schema that describes how to generate a single JSON field value.
+/// Schema that describes how to generate a single YAML field value.
 ///
-/// The `"type"` key in the JSON document selects the enum variant.
+/// The `"type"` key in the YAML document selects the enum variant.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum FieldSchema {
@@ -112,7 +126,7 @@ pub enum FieldSchema {
         value: Option<bool>,
     },
 
-    /// A JSON array field.
+    /// A YAML array field.
     Array {
         /// Inclusive element-count range `[min, max]`.
         length: [usize; 2],
@@ -120,7 +134,7 @@ pub enum FieldSchema {
         items: Vec<FieldSchema>,
     },
 
-    /// A nested JSON object field.
+    /// A nested YAML object field.
     Object {
         /// Nested field schemas keyed by field name.
         fields: HashMap<String, FieldSchema>,
@@ -129,7 +143,7 @@ pub enum FieldSchema {
 
 // ── Entity template ───────────────────────────────────────────────────────────
 
-/// Parsed contents of a `*.template.json` file.
+/// Parsed contents of a `*.template.yaml` file.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct EntityTemplate {
     /// Logical entity type label (informational, e.g. `"player"`, `"enemy"`).
@@ -189,7 +203,10 @@ static WORDS: &[&str] = &[
 
 // ── Value generation ──────────────────────────────────────────────────────────
 
-/// Generate a random [`serde_json::Value`] that satisfies `schema`.
+/// Generate a random value that satisfies `schema`.
+///
+/// Uses [`serde_json::Value`] as an intermediate representation;
+/// the caller is responsible for serializing it to YAML when writing to disk.
 pub fn generate_value(schema: &FieldSchema) -> serde_json::Value {
     let mut rng = rand::thread_rng();
     match schema {
@@ -259,7 +276,7 @@ pub fn generate_value(schema: &FieldSchema) -> serde_json::Value {
     }
 }
 
-/// Generate a full entity JSON object from a top-level schema map.
+/// Generate a full entity data structure from a top-level schema map.
 pub fn generate_object(
     schema: &HashMap<String, FieldSchema>,
 ) -> serde_json::Map<String, serde_json::Value> {
@@ -284,14 +301,14 @@ fn pick<'a>(rng: &mut impl Rng, list: &[&'a str]) -> &'a str {
 
 // ── File I/O ──────────────────────────────────────────────────────────────────
 
-/// Parse an [`EntityTemplate`] from a `*.template.json` file on disk.
+/// Parse an [`EntityTemplate`] from a `*.template.yaml` file on disk.
 pub fn load_template(path: &Path) -> Result<EntityTemplate, String> {
-    let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&json)
+    let yaml = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    serde_yaml::from_str(&yaml)
         .map_err(|e| format!("解析模板 {} 失败: {}", path.display(), e))
 }
 
-/// Recursively find all `*.template.json` files under `root`.
+/// Recursively find all `*.template.yaml` files under `root`.
 pub fn find_templates(root: &Path) -> Vec<PathBuf> {
     let mut result = Vec::new();
     let Ok(entries) = std::fs::read_dir(root) else {
@@ -313,9 +330,9 @@ pub fn find_templates(root: &Path) -> Vec<PathBuf> {
     result
 }
 
-/// Returns `true` when `filename` follows the `*.template.json` convention.
+/// Returns `true` when `filename` follows the `*.template.yaml` convention.
 pub fn is_template_filename(filename: &str) -> bool {
-    filename.ends_with(".template.json")
+    filename.ends_with(".template.yaml")
 }
 
 /// Apply `template` by generating its output file inside `template_path`'s
@@ -336,97 +353,152 @@ pub fn apply_template(
         return Ok(output_path);
     }
     let obj = generate_object(&template.schema);
-    let json = serde_json::to_string_pretty(&serde_json::Value::Object(obj))
+    let yaml = serde_yaml::to_string(&serde_json::Value::Object(obj))
         .map_err(|e| e.to_string())?;
-    std::fs::write(&output_path, json).map_err(|e| e.to_string())?;
+    std::fs::write(&output_path, yaml).map_err(|e| e.to_string())?;
     Ok(output_path)
 }
 
 // ── Built-in template definitions ────────────────────────────────────────────
 
-/// Return the canonical template JSON string for each built-in entity type.
+/// Return the canonical template YAML string for each built-in entity type.
 ///
 /// These templates cover every entity that the game manages:
 /// `player`, `enemy`, `area`, `crop`, and `animal`.
 pub fn builtin_templates() -> Vec<(&'static str, &'static str)> {
     vec![
         (
-            "player.template.json",
-            r#"{
-  "entity": "player",
-  "output": "player_generated.json",
-  "schema": {
-    "name":        { "type": "string",  "format": "name" },
-    "hp":          { "type": "integer", "value": 100 },
-    "max_hp":      { "type": "integer", "value": 100 },
-    "attack":      { "type": "integer", "range": [8, 15] },
-    "defense":     { "type": "integer", "range": [3, 8] },
-    "level":       { "type": "integer", "value": 1 },
-    "exp":         { "type": "integer", "value": 0 },
-    "exp_to_next": { "type": "integer", "value": 100 },
-    "gold":        { "type": "integer", "range": [20, 80] }
-  }
-}"#,
+            "player.template.yaml",
+            r#"entity: player
+output: player_generated.yaml
+schema:
+  name:
+    type: string
+    format: name
+  hp:
+    type: integer
+    value: 100
+  max_hp:
+    type: integer
+    value: 100
+  attack:
+    type: integer
+    range: [8, 15]
+  defense:
+    type: integer
+    range: [3, 8]
+  level:
+    type: integer
+    value: 1
+  exp:
+    type: integer
+    value: 0
+  exp_to_next:
+    type: integer
+    value: 100
+  gold:
+    type: integer
+    range: [20, 80]
+"#,
         ),
         (
-            "enemy.template.json",
-            r#"{
-  "entity": "enemy",
-  "output": "enemy_generated.json",
-  "schema": {
-    "name":        { "type": "string",  "format": "enemy_name" },
-    "hp":          { "type": "integer", "range": [20, 80] },
-    "max_hp":      { "type": "integer", "range": [20, 80] },
-    "attack":      { "type": "integer", "range": [5, 20] },
-    "defense":     { "type": "integer", "range": [1, 8] },
-    "exp_reward":  { "type": "integer", "range": [10, 40] },
-    "gold_reward": { "type": "integer", "range": [3, 15] },
-    "skills":      { "type": "array", "length": [0, 5],
-                     "items": [{ "type": "string" }] }
-  }
-}"#,
+            "enemy.template.yaml",
+            r#"entity: enemy
+output: enemy_generated.yaml
+schema:
+  name:
+    type: string
+    format: enemy_name
+  hp:
+    type: integer
+    range: [20, 80]
+  max_hp:
+    type: integer
+    range: [20, 80]
+  attack:
+    type: integer
+    range: [5, 20]
+  defense:
+    type: integer
+    range: [1, 8]
+  exp_reward:
+    type: integer
+    range: [10, 40]
+  gold_reward:
+    type: integer
+    range: [3, 15]
+  skills:
+    type: array
+    length: [0, 5]
+    items:
+      - type: string
+"#,
         ),
         (
-            "area.template.json",
-            r#"{
-  "entity": "area",
-  "output": "area_generated.json",
-  "schema": {
-    "name":            { "type": "string",  "format": "area_name" },
-    "description":     { "type": "string",  "format": "description" },
-    "level_req":       { "type": "integer", "range": [1, 12] },
-    "enemy_level":     { "type": "integer", "range": [1, 12] },
-    "explore_cost_hp": { "type": "integer", "range": [0, 15] }
-  }
-}"#,
+            "area.template.yaml",
+            r#"entity: area
+output: area_generated.yaml
+schema:
+  name:
+    type: string
+    format: area_name
+  description:
+    type: string
+    format: description
+  level_req:
+    type: integer
+    range: [1, 12]
+  enemy_level:
+    type: integer
+    range: [1, 12]
+  explore_cost_hp:
+    type: integer
+    range: [0, 15]
+"#,
         ),
         (
-            "crop.template.json",
-            r#"{
-  "entity": "crop",
-  "output": "crop_generated.json",
-  "schema": {
-    "status":         { "type": "string",  "value": "occupied" },
-    "crop_name":      { "type": "string",  "format": "crop_name" },
-    "grow_time_secs": { "type": "integer", "range": [30, 120] },
-    "yield_gold":     { "type": "integer", "range": [10, 50] },
-    "planted_at_secs":{ "type": "integer", "value": 0 }
-  }
-}"#,
+            "crop.template.yaml",
+            r#"entity: crop
+output: crop_generated.yaml
+schema:
+  status:
+    type: string
+    value: occupied
+  crop_name:
+    type: string
+    format: crop_name
+  grow_time_secs:
+    type: integer
+    range: [30, 120]
+  yield_gold:
+    type: integer
+    range: [10, 50]
+  planted_at_secs:
+    type: integer
+    value: 0
+"#,
         ),
         (
-            "animal.template.json",
-            r#"{
-  "entity": "animal",
-  "output": "animal_generated.json",
-  "schema": {
-    "name":                 { "type": "string",  "format": "animal_name" },
-    "breed_time_secs":      { "type": "integer", "range": [60, 360] },
-    "yield_gold":           { "type": "integer", "range": [10, 60] },
-    "breeding":             { "type": "boolean", "value": false },
-    "breed_started_at_secs":{ "type": "integer", "value": 0 }
-  }
-}"#,
+            "animal.template.yaml",
+            r#"entity: animal
+output: animal_generated.yaml
+schema:
+  name:
+    type: string
+    format: animal_name
+  breed_time_secs:
+    type: integer
+    range: [60, 360]
+  yield_gold:
+    type: integer
+    range: [10, 60]
+  breeding:
+    type: boolean
+    value: false
+  breed_started_at_secs:
+    type: integer
+    value: 0
+"#,
         ),
     ]
 }

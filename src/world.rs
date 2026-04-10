@@ -12,7 +12,7 @@ use crate::template;
 
 pub const WORLD_DIR: &str = "world";
 pub const FARM_AREA: &str = "农场";
-pub const PLAYER_FILE: &str = "player.json";
+pub const PLAYER_FILE: &str = "player.yaml";
 pub const DEFAULT_START_AREA: &str = "森林";
 
 /// Events emitted by the background filesystem watcher.
@@ -31,11 +31,11 @@ pub enum WorldEvent {
 /// Filesystem-backed world manager.
 ///
 /// Architecture:
-/// - `world/<area>/`               → game map / region (directory)
-/// - `world/<area>/<entity>.json`  → game entity (player, enemy, item…)
-/// - Player location               → which area directory holds `player.json`
-/// - Player movement               → `std::fs::rename` of `player.json`
-/// - Background watcher            → `notify` crate drives real-time events
+/// - `world/<area>/`                → game map / region (directory)
+/// - `world/<area>/<entity>.yaml`   → game entity (player, enemy, item…)
+/// - Player location                → which area directory holds `player.yaml`
+/// - Player movement                → `std::fs::rename` of `player.yaml`
+/// - Background watcher             → `notify` crate drives real-time events
 pub struct WorldManager {
     world_path: PathBuf,
     event_rx: mpsc::Receiver<WorldEvent>,
@@ -73,15 +73,15 @@ impl WorldManager {
 
     // ── Area directory management ─────────────────────────────────────────────
 
-    /// Create each area's subdirectory and write its `area.json` metadata file.
+    /// Create each area's subdirectory and write its `area.yaml` metadata file.
     pub fn init_areas(&self, areas: &[crate::exploration::Area]) -> Result<(), String> {
         for area in areas {
             let dir = self.world_path.join(&area.name);
             std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-            let cfg_path = dir.join("area.json");
+            let cfg_path = dir.join("area.yaml");
             if !cfg_path.exists() {
-                let json = serde_json::to_string_pretty(area).map_err(|e| e.to_string())?;
-                std::fs::write(&cfg_path, json).map_err(|e| e.to_string())?;
+                let yaml = serde_yaml::to_string(area).map_err(|e| e.to_string())?;
+                std::fs::write(&cfg_path, yaml).map_err(|e| e.to_string())?;
             }
         }
         Ok(())
@@ -89,7 +89,7 @@ impl WorldManager {
 
     // ── Player file operations ────────────────────────────────────────────────
 
-    /// Scan area directories and return the one that currently holds `player.json`.
+    /// Scan area directories and return the one that currently holds `player.yaml`.
     pub fn find_player_area(&self, area_names: &[&str]) -> Option<String> {
         for name in area_names {
             if self.world_path.join(name).join(PLAYER_FILE).exists() {
@@ -99,21 +99,21 @@ impl WorldManager {
         None
     }
 
-    /// Write the player entity to `world/<area>/player.json`.
+    /// Write the player entity to `world/<area>/player.yaml`.
     pub fn write_player(&self, player: &Player, area: &str) -> Result<(), String> {
         let path = self.world_path.join(area).join(PLAYER_FILE);
-        let json = serde_json::to_string_pretty(player).map_err(|e| e.to_string())?;
-        std::fs::write(path, json).map_err(|e| e.to_string())
+        let yaml = serde_yaml::to_string(player).map_err(|e| e.to_string())?;
+        std::fs::write(path, yaml).map_err(|e| e.to_string())
     }
 
-    /// Read the player entity from `world/<area>/player.json`.
+    /// Read the player entity from `world/<area>/player.yaml`.
     pub fn read_player(&self, area: &str) -> Result<Player, String> {
         let path = self.world_path.join(area).join(PLAYER_FILE);
-        let json = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        serde_json::from_str(&json).map_err(|e| e.to_string())
+        let yaml = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        serde_yaml::from_str(&yaml).map_err(|e| e.to_string())
     }
 
-    /// Move `player.json` from one area directory to another.
+    /// Move `player.yaml` from one area directory to another.
     ///
     /// This is what "player movement" means in the filesystem-driven
     /// architecture: an `std::fs::rename` observed by the watcher.
@@ -133,8 +133,8 @@ impl WorldManager {
         entity: &T,
     ) -> Result<(), String> {
         let path = self.world_path.join(area).join(filename);
-        let json = serde_json::to_string_pretty(entity).map_err(|e| e.to_string())?;
-        std::fs::write(path, json).map_err(|e| e.to_string())
+        let yaml = serde_yaml::to_string(entity).map_err(|e| e.to_string())?;
+        std::fs::write(path, yaml).map_err(|e| e.to_string())
     }
 
     /// Delete an entity file from `world/<area>/<filename>` (no-op if absent).
@@ -159,16 +159,16 @@ impl WorldManager {
         std::fs::create_dir_all(&farm_dir).map_err(|e| e.to_string())?;
 
         for (i, plot) in farm.plots.iter().enumerate() {
-            let path = farm_dir.join(format!("plot_{}.json", i));
+            let path = farm_dir.join(format!("plot_{}.yaml", i));
             if !path.exists() {
                 let fs_plot = crop_to_fs_plot(plot.as_ref());
-                let json = serde_json::to_string_pretty(&fs_plot).map_err(|e| e.to_string())?;
-                std::fs::write(&path, json).map_err(|e| e.to_string())?;
+                let yaml = serde_yaml::to_string(&fs_plot).map_err(|e| e.to_string())?;
+                std::fs::write(&path, yaml).map_err(|e| e.to_string())?;
             }
         }
 
         for animal in &farm.animals {
-            let path = farm_dir.join(format!("{}.json", animal.name));
+            let path = farm_dir.join(format!("{}.yaml", animal.name));
             if !path.exists() {
                 let fs_animal = FsAnimal {
                     name: animal.name.clone(),
@@ -177,8 +177,8 @@ impl WorldManager {
                     breeding: false,
                     breed_started_at_secs: None,
                 };
-                let json = serde_json::to_string_pretty(&fs_animal).map_err(|e| e.to_string())?;
-                std::fs::write(&path, json).map_err(|e| e.to_string())?;
+                let yaml = serde_yaml::to_string(&fs_animal).map_err(|e| e.to_string())?;
+                std::fs::write(&path, yaml).map_err(|e| e.to_string())?;
             }
         }
         Ok(())
@@ -191,8 +191,8 @@ impl WorldManager {
 
         for (i, plot) in farm.plots.iter().enumerate() {
             let fs_plot = crop_to_fs_plot(plot.as_ref());
-            let json = serde_json::to_string_pretty(&fs_plot).map_err(|e| e.to_string())?;
-            std::fs::write(farm_dir.join(format!("plot_{}.json", i)), json)
+            let yaml = serde_yaml::to_string(&fs_plot).map_err(|e| e.to_string())?;
+            std::fs::write(farm_dir.join(format!("plot_{}.yaml", i)), yaml)
                 .map_err(|e| e.to_string())?;
         }
 
@@ -204,8 +204,8 @@ impl WorldManager {
                 breeding: animal.breeding,
                 breed_started_at_secs: animal.breed_started_at_secs,
             };
-            let json = serde_json::to_string_pretty(&fs_animal).map_err(|e| e.to_string())?;
-            std::fs::write(farm_dir.join(format!("{}.json", animal.name)), json)
+            let yaml = serde_yaml::to_string(&fs_animal).map_err(|e| e.to_string())?;
+            std::fs::write(farm_dir.join(format!("{}.yaml", animal.name)), yaml)
                 .map_err(|e| e.to_string())?;
         }
         Ok(())
@@ -217,10 +217,10 @@ impl WorldManager {
 
         let mut plots = Vec::new();
         for i in 0..template.plots.len() {
-            let path = farm_dir.join(format!("plot_{}.json", i));
+            let path = farm_dir.join(format!("plot_{}.yaml", i));
             if path.exists() {
-                let json = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-                let fs_plot: FsPlot = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+                let yaml = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+                let fs_plot: FsPlot = serde_yaml::from_str(&yaml).map_err(|e| e.to_string())?;
                 plots.push(fs_plot_to_crop(fs_plot));
             } else {
                 plots.push(None);
@@ -229,11 +229,11 @@ impl WorldManager {
 
         let mut animals = Vec::new();
         for tmpl in &template.animals {
-            let path = farm_dir.join(format!("{}.json", tmpl.name));
+            let path = farm_dir.join(format!("{}.yaml", tmpl.name));
             if path.exists() {
-                let json = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+                let yaml = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
                 let fs_animal: FsAnimal =
-                    serde_json::from_str(&json).map_err(|e| e.to_string())?;
+                    serde_yaml::from_str(&yaml).map_err(|e| e.to_string())?;
                 animals.push(Animal {
                     name: fs_animal.name,
                     breed_time_secs: fs_animal.breed_time_secs,
@@ -278,7 +278,7 @@ impl WorldManager {
         Ok(())
     }
 
-    /// Scan `world/` recursively for `*.template.json` files and apply each
+    /// Scan `world/` recursively for `*.template.yaml` files and apply each
     /// one (generating its output entity file) if the output does not yet exist.
     ///
     /// Returns a list of `(template_path, output_path)` pairs for every file
@@ -288,23 +288,17 @@ impl WorldManager {
         for tmpl_path in template::find_templates(&self.world_path) {
             match template::load_template(&tmpl_path) {
                 Ok(tmpl) => {
+                    let tmpl_str = tmpl_path.to_string_lossy().to_string();
+                    // Determine the output path and whether it already exists.
+                    let dir = tmpl_path.parent();
+                    let already_exists = dir
+                        .map(|d| d.join(&tmpl.output).exists())
+                        .unwrap_or(false);
                     match template::apply_template(&tmpl_path, &tmpl, false) {
                         Ok(out_path) => {
-                            // Only report when a new file was written.
                             let out_str = out_path.to_string_lossy().to_string();
-                            let tmpl_str = tmpl_path.to_string_lossy().to_string();
-                            // Only report files that did not exist before apply_template was called.
-                            let tmpl_newer = std::fs::metadata(&tmpl_path)
-                                .and_then(|m| m.modified())
-                                .ok();
-                            let out_mtime = std::fs::metadata(&out_path)
-                                .and_then(|m| m.modified())
-                                .ok();
-                            let newly_written = match (tmpl_newer, out_mtime) {
-                                (Some(t), Some(o)) => t > o,
-                                _ => true,
-                            };
-                            if newly_written {
+                            // Only report files that were newly generated in this call.
+                            if !already_exists {
                                 generated.push((tmpl_str, out_str));
                             }
                         }
@@ -503,7 +497,7 @@ fn area_of(path: &Path, world_path: &Path) -> Option<String> {
 
 /// Return true for files that are internal config and should not surface as entity events.
 fn is_internal_file(filename: &str) -> bool {
-    filename == "area.json"
+    filename == "area.yaml"
         || filename == PLAYER_FILE
         || template::is_template_filename(filename)
 }
