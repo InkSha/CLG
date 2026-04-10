@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.4](https://github.com/InkSha/CLG/compare/v0.1.3...v0.1.4) (2026-04-10)
+
+
+### Features
+
+* add entity template system with configurable data generation ([cb59236](https://github.com/InkSha/CLG/commit/cb592365babd1a87b7aa0f2a8617d4b871297e17))
+* entity template system with configurable data generation ([a51ae18](https://github.com/InkSha/CLG/commit/a51ae18ed93319045d28ed4ca01ad4613da67d5c))
+* file-driven action system, configurable areas/crops/animals, command-line game loop ([737aae7](https://github.com/InkSha/CLG/commit/737aae7c9fb7719c538410cb8ece27205746a89e))
+* file-driven config and action command system ([1656a86](https://github.com/InkSha/CLG/commit/1656a86634343fa32d3f61e2e8f92c73fdf155db))
+* migrate all data structure files from JSON to YAML, update READMEs ([49c4a12](https://github.com/InkSha/CLG/commit/49c4a12ad0c0e1012044d0840779cb4e36d20054))
+* reset default actions to explor/back and update README with Linux sysops commands ([0faad88](https://github.com/InkSha/CLG/commit/0faad88cf0d5ac60c83ab164a8d378dbda6ff7b8))
+
 ## [0.1.3](https://github.com/InkSha/CLG/compare/v0.1.2...v0.1.3) (2026-04-09)
 
 
