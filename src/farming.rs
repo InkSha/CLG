@@ -2,6 +2,24 @@ use serde::{Deserialize, Serialize};
 
 use crate::world::current_unix_secs;
 
+// ── Config types (loaded from data files) ────────────────────────────────────
+
+/// Configurable crop type loaded from `world/config/crops.yaml`.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct CropType {
+    pub name: String,
+    pub grow_time_secs: u64,
+    pub yield_gold: u32,
+}
+
+/// Configurable animal type loaded from `world/config/animals.yaml`.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AnimalType {
+    pub name: String,
+    pub breed_time_secs: u64,
+    pub yield_gold: u32,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Crop {
     pub name: String,
@@ -49,65 +67,56 @@ pub struct Farm {
 }
 
 impl Farm {
-    pub fn new() -> Self {
+    /// Create a farm from configurable animal types with `num_plots` empty plots.
+    pub fn from_types(animal_types: &[AnimalType], num_plots: usize) -> Self {
         Farm {
-            plots: vec![None, None, None, None],
-            animals: vec![
-                Animal {
-                    name: "鸡".to_string(),
-                    breed_time_secs: 120,
-                    yield_gold: 15,
+            plots: vec![None; num_plots],
+            animals: animal_types
+                .iter()
+                .map(|a| Animal {
+                    name: a.name.clone(),
+                    breed_time_secs: a.breed_time_secs,
+                    yield_gold: a.yield_gold,
                     breeding: false,
                     breed_started_at_secs: None,
-                },
-                Animal {
-                    name: "牛".to_string(),
-                    breed_time_secs: 300,
-                    yield_gold: 50,
-                    breeding: false,
-                    breed_started_at_secs: None,
-                },
-                Animal {
-                    name: "羊".to_string(),
-                    breed_time_secs: 180,
-                    yield_gold: 25,
-                    breeding: false,
-                    breed_started_at_secs: None,
-                },
-            ],
+                })
+                .collect(),
         }
     }
 
-    pub fn get_crop_types() -> Vec<(String, u64, u32)> {
+    /// Default crop types (used when no `world/config/crops.yaml` exists).
+    pub fn default_crop_types() -> Vec<CropType> {
         vec![
-            ("小麦".to_string(), 30, 10),
-            ("土豆".to_string(), 60, 25),
-            ("胡萝卜".to_string(), 45, 18),
+            CropType { name: "小麦".to_string(), grow_time_secs: 30, yield_gold: 10 },
+            CropType { name: "土豆".to_string(), grow_time_secs: 60, yield_gold: 25 },
+            CropType { name: "胡萝卜".to_string(), grow_time_secs: 45, yield_gold: 18 },
+        ]
+    }
+
+    /// Default animal types (used when no `world/config/animals.yaml` exists).
+    pub fn default_animal_types() -> Vec<AnimalType> {
+        vec![
+            AnimalType { name: "鸡".to_string(), breed_time_secs: 120, yield_gold: 15 },
+            AnimalType { name: "牛".to_string(), breed_time_secs: 300, yield_gold: 50 },
+            AnimalType { name: "羊".to_string(), breed_time_secs: 180, yield_gold: 25 },
         ]
     }
 
     /// Plant a crop in the given plot, recording the current time as the
-    /// planting timestamp (replaces the old scheduler task).
-    pub fn plant(&mut self, plot_idx: usize, crop_type_idx: usize) -> Result<(), String> {
+    /// planting timestamp.
+    pub fn plant(&mut self, plot_idx: usize, crop: &CropType) -> Result<(), String> {
         if plot_idx >= self.plots.len() {
             return Err("无效地块索引。".to_string());
         }
         if self.plots[plot_idx].is_some() {
             return Err("该地块已被占用。".to_string());
         }
-        let crop_types = Self::get_crop_types();
-        let (name, grow_time, yield_gold) = crop_types
-            .get(crop_type_idx)
-            .ok_or("无效作物类型。")?
-            .clone();
-
         self.plots[plot_idx] = Some(Crop {
-            name,
-            grow_time_secs: grow_time,
-            yield_gold,
+            name: crop.name.clone(),
+            grow_time_secs: crop.grow_time_secs,
+            yield_gold: crop.yield_gold,
             planted_at_secs: Some(current_unix_secs()),
         });
-
         Ok(())
     }
 

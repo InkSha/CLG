@@ -6,13 +6,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use notify::{recommended_watcher, Event, EventKind, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 
-use crate::farming::{Animal, Crop, Farm};
+use crate::exploration::{default_areas, Area};
+use crate::farming::{Animal, AnimalType, Crop, CropType, Farm};
 use crate::player::Player;
 use crate::template;
 
 pub const WORLD_DIR: &str = "world";
 pub const FARM_AREA: &str = "农场";
 pub const PLAYER_FILE: &str = "player.yaml";
+pub const ACTION_FILE: &str = "action.yaml";
+pub const CONFIG_DIR: &str = "config";
 pub const DEFAULT_START_AREA: &str = "森林";
 
 /// Events emitted by the background filesystem watcher.
@@ -69,6 +72,177 @@ impl WorldManager {
             event_rx: rx,
             _watcher: watcher,
         })
+    }
+
+    // ── Config file management ────────────────────────────────────────────────
+
+    /// Create the `world/config/` directory and write all default config files
+    /// (areas, crops, animals, action.yaml) if they do not already exist.
+    pub fn init_config(&self) -> Result<(), String> {
+        let cfg_dir = self.world_path.join(CONFIG_DIR);
+        std::fs::create_dir_all(&cfg_dir).map_err(|e| e.to_string())?;
+
+        // areas.yaml
+        let areas_path = cfg_dir.join("areas.yaml");
+        if !areas_path.exists() {
+            let yaml = serde_yaml::to_string(&default_areas()).map_err(|e| e.to_string())?;
+            std::fs::write(&areas_path, yaml).map_err(|e| e.to_string())?;
+        }
+
+        // crops.yaml
+        let crops_path = cfg_dir.join("crops.yaml");
+        if !crops_path.exists() {
+            let yaml =
+                serde_yaml::to_string(&Farm::default_crop_types()).map_err(|e| e.to_string())?;
+            std::fs::write(&crops_path, yaml).map_err(|e| e.to_string())?;
+        }
+
+        // animals.yaml
+        let animals_path = cfg_dir.join("animals.yaml");
+        if !animals_path.exists() {
+            let yaml =
+                serde_yaml::to_string(&Farm::default_animal_types()).map_err(|e| e.to_string())?;
+            std::fs::write(&animals_path, yaml).map_err(|e| e.to_string())?;
+        }
+
+        // action.yaml (global)
+        let action_path = self.world_path.join(ACTION_FILE);
+        if !action_path.exists() {
+            let default = crate::actions::ActionMap::default_map();
+            let yaml = default.to_yaml()?;
+            std::fs::write(&action_path, yaml).map_err(|e| e.to_string())?;
+        }
+
+        Ok(())
+    }
+
+    /// Load areas from `world/config/areas.yaml`, falling back to built-in defaults.
+    pub fn load_areas_config(&self) -> Vec<Area> {
+        let path = self.world_path.join(CONFIG_DIR).join("areas.yaml");
+        if path.exists() {
+            if let Ok(yaml) = std::fs::read_to_string(&path) {
+                if let Ok(areas) = serde_yaml::from_str::<Vec<Area>>(&yaml) {
+                    if !areas.is_empty() {
+                        return areas;
+                    }
+                }
+            }
+        }
+        default_areas()
+    }
+
+    /// Load crop types from `world/config/crops.yaml`, falling back to defaults.
+    pub fn load_crop_types(&self) -> Vec<CropType> {
+        let path = self.world_path.join(CONFIG_DIR).join("crops.yaml");
+        if path.exists() {
+            if let Ok(yaml) = std::fs::read_to_string(&path) {
+                if let Ok(types) = serde_yaml::from_str::<Vec<CropType>>(&yaml) {
+                    if !types.is_empty() {
+                        return types;
+                    }
+                }
+            }
+        }
+        Farm::default_crop_types()
+    }
+
+    /// Load animal types from `world/config/animals.yaml`, falling back to defaults.
+    pub fn load_animal_types(&self) -> Vec<AnimalType> {
+        let path = self.world_path.join(CONFIG_DIR).join("animals.yaml");
+        if path.exists() {
+            if let Ok(yaml) = std::fs::read_to_string(&path) {
+                if let Ok(types) = serde_yaml::from_str::<Vec<AnimalType>>(&yaml) {
+                    if !types.is_empty() {
+                        return types;
+                    }
+                }
+            }
+        }
+        Farm::default_animal_types()
+    }
+
+    /// Build a default farm template using config-loaded animal types.
+    pub fn make_default_farm(&self) -> Farm {
+        let animal_types = self.load_animal_types();
+        Farm::from_types(&animal_types, 4)
+    }
+
+    // ── Action map loading ────────────────────────────────────────────────────
+
+    /// Load the effective action map for `area`.
+    ///
+    /// Starts from the global `world/action.yaml`, then merges any
+    /// area-specific `world/<area>/action.yaml` on top (area keys win).
+    pub fn load_action_map(&self, area: &str) -> crate::actions::ActionMap {
+        let global_path = self.world_path.join(ACTION_FILE);
+        let mut map = if global_path.exists() {
+            crate::actions::ActionMap::load(&global_path)
+                .unwrap_or_else(|_| crate::actions::ActionMap::default_map())
+        } else {
+            crate::actions::ActionMap::default_map()
+        };
+
+        let area_path = self.world_path.join(area).join(ACTION_FILE);
+        if area_path.exists() {
+            if let Ok(area_map) = crate::actions::ActionMap::load(&area_path) {
+                map.merge(&area_map);
+            }
+        }
+
+        map
+    }
+
+    // ── Entity listing / search helpers ──────────────────────────────────────
+
+    /// List all files in `world/<area>/` (including internal config files).
+    pub fn list_area_files(&self, area: &str) -> Vec<String> {
+        let dir = self.world_path.join(area);
+        let mut names: Vec<String> = std::fs::read_dir(&dir)
+            .ok()
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// Read the raw YAML content of an entity file in `world/<area>/<file>`.
+    pub fn read_entity_raw(&self, area: &str, file: &str) -> Result<String, String> {
+        let path = self.world_path.join(area).join(file);
+        std::fs::read_to_string(&path).map_err(|e| e.to_string())
+    }
+
+    /// Write raw text content to `world/<area>/<file>`.
+    pub fn write_entity_raw(&self, area: &str, file: &str, content: &str) -> Result<(), String> {
+        let path = self.world_path.join(area).join(file);
+        std::fs::write(&path, content).map_err(|e| e.to_string())
+    }
+
+    /// Search `world/<area>/` for files or content lines matching `pattern`.
+    ///
+    /// Returns a list of `(filename, matched_lines)` where `matched_lines` is
+    /// a list of `(line_number, line_text)` pairs from the file content.
+    /// Files whose *name* matches are included even if no content lines match.
+    pub fn search_area(&self, area: &str, pattern: &str) -> Vec<(String, Vec<(usize, String)>)> {
+        let pat = pattern.to_lowercase();
+        let mut results = Vec::new();
+        for filename in self.list_area_files(area) {
+            let name_matches = filename.to_lowercase().contains(&pat);
+            let mut line_matches = Vec::new();
+            if let Ok(content) = self.read_entity_raw(area, &filename) {
+                for (i, line) in content.lines().enumerate() {
+                    if line.to_lowercase().contains(&pat) {
+                        line_matches.push((i + 1, line.to_string()));
+                    }
+                }
+            }
+            if name_matches || !line_matches.is_empty() {
+                results.push((filename, line_matches));
+            }
+        }
+        results
     }
 
     // ── Area directory management ─────────────────────────────────────────────
@@ -489,15 +663,22 @@ fn translate_notify_event(event: &Event, world_path: &Path) -> Vec<WorldEvent> {
 }
 
 /// Extract the area name (first path component under `world_path`).
+/// Returns `None` if the path is inside a reserved directory (e.g. `config/`).
 fn area_of(path: &Path, world_path: &Path) -> Option<String> {
     let rel = path.strip_prefix(world_path).ok()?;
     let component = rel.components().next()?;
-    Some(component.as_os_str().to_string_lossy().to_string())
+    let name = component.as_os_str().to_string_lossy().to_string();
+    // The config directory is not a game area.
+    if name == CONFIG_DIR {
+        return None;
+    }
+    Some(name)
 }
 
 /// Return true for files that are internal config and should not surface as entity events.
 fn is_internal_file(filename: &str) -> bool {
     filename == "area.yaml"
         || filename == PLAYER_FILE
+        || filename == ACTION_FILE
         || template::is_template_filename(filename)
 }
