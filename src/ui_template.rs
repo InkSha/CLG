@@ -464,18 +464,18 @@ exclude: []
 env:
   name: $player.name
   level: $player.level
-  ch: $player.currentHealth
-  mh: $player.health
+  ch: $player.hp
+  mh: $player.max_hp
   atk: $player.attack
   def: $player.defense
   exp: $player.exp
-  next: $player.expToNext
+  next: $player.exp_to_next
   gold: $player.gold
 content: |
   ---
-  | ${{ $name }}  Lv.${{ $level }} |-$00ff00❤️ ${{ $ch }}/${{ $mh }} |-⚔️${{ $atk }} 🛡️${{ $def }} |
+  | ${{ $name }}  Lv.${{ $level }} |-❤️ $00ff00{{ $ch }}/${{ $mh }} |-⚔️${{ $atk }} 🛡️${{ $def }} |
   ---
-  | 经验：${{ $exp }}/${{ $next }} |-$ffcc00💰 ${{ $gold }}g |
+  | 经验：${{ $exp }}/${{ $next }} |-$ffcc00{{ $gold }}g 💰 |
   ---
   [ ${{ $CURRENT_AREA.name }} ]
   ---
