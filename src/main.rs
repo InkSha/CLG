@@ -1,15 +1,11 @@
-mod actions;
+mod command;
+mod engine;
 mod game;
-mod player;
-mod combat;
-mod exploration;
-mod farming;
-mod template;
-mod world;
+mod persistence;
 mod ui;
-mod ui_template;
+mod vfs;
 
 fn main() {
-    let mut game = game::GameState::new();
+    let mut game = game::Game::new();
     game.run();
 }

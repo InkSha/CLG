@@ -1,6 +1,11 @@
+//! Player entity.
+//!
+//! The player is special: it has typed fields rather than a generic property
+//! bag, because almost every system in the game reads player stats directly.
+
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Player {
     pub name: String,
     pub hp: i32,
@@ -13,6 +18,7 @@ pub struct Player {
     pub gold: u32,
 }
 
+#[allow(dead_code)]
 impl Player {
     pub fn new(name: String) -> Self {
         Player {
@@ -36,7 +42,7 @@ impl Player {
         self.hp = (self.hp + amt).min(self.max_hp);
     }
 
-    /// Returns true if player leveled up
+    /// Returns true if player leveled up.
     pub fn gain_exp(&mut self, amt: u32) -> bool {
         self.exp += amt;
         if self.exp >= self.exp_to_next {
@@ -59,5 +65,21 @@ impl Player {
 
     pub fn is_alive(&self) -> bool {
         self.hp > 0
+    }
+
+    /// Render player status as text.
+    pub fn status_display(&self) -> String {
+        format!(
+            "名称: {}\nHP: {}/{}\n攻击: {}\n防御: {}\n等级: {}\n经验: {}/{}\n金币: {}",
+            self.name,
+            self.hp,
+            self.max_hp,
+            self.attack,
+            self.defense,
+            self.level,
+            self.exp,
+            self.exp_to_next,
+            self.gold
+        )
     }
 }

@@ -18,7 +18,8 @@ pub fn print_header() {
     print_separator();
 }
 
-pub fn print_player_status(player: &crate::player::Player) {
+#[allow(dead_code)]
+pub fn print_player_status(player: &crate::engine::player::Player) {
     print_separator();
     println!("角色：{}  |  等级：{}", player.name, player.level);
     println!(
@@ -55,6 +56,7 @@ pub fn print_message(msg: &str) {
     println!("{}", msg);
 }
 
+#[allow(dead_code)]
 pub fn wait_for_enter() {
     print!("\n按 Enter 继续...");
     let _ = stdout().flush();
