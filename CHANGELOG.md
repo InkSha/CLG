@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.1.5](https://github.com/InkSha/CLG/compare/v0.1.4...v0.1.5) (2026-04-11)
+
+
+### Features
+
+* add UI template system (ui_template.rs, world/config/ui.yaml) ([0765b6c](https://github.com/InkSha/CLG/commit/0765b6ca4112d5afae9468af0fa9197ee0cfe410))
+* YAML-driven UI template system ([49c06b3](https://github.com/InkSha/CLG/commit/49c06b32f8d92ff2e49534051a968bd87e2e6011))
+
+
+### Bug Fixes
+
+* correct default UI template (color syntax, canonical field names) ([8cd52e0](https://github.com/InkSha/CLG/commit/8cd52e0872d3dd7f4a1c77a08da034a9e7878697))
+* improve error message for invalid farm plot index in VFS ([85f0e1a](https://github.com/InkSha/CLG/commit/85f0e1a0c1c483b78b4ab5fc56420cf0ade25492))
+
+
+### Refactoring
+
+* restructure CLI game into three-layer architecture (engine/vfs/persistence) ([90a0785](https://github.com/InkSha/CLG/commit/90a0785330a90f2e84131f81b5f73a5742eee70b))
+* restructure into three-layer architecture (engine/vfs/persistence) ([8f71c8b](https://github.com/InkSha/CLG/commit/8f71c8bc4d22f6de1ee86a8a55404a71e36fbdeb))
+
 ## [0.1.4](https://github.com/InkSha/CLG/compare/v0.1.3...v0.1.4) (2026-04-10)
 
 
